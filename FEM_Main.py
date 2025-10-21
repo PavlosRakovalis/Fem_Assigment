@@ -62,7 +62,8 @@ for i in range(len(elements)):
 
 plt.show()
 
-
-
-
-
+# Create empty stiffness matrix (3 DOF per node: x, y, z)
+num_nodes = len(points)
+n_dof = 3 * num_nodes
+labels = [f"V{n}{axis}" for n in range(1, num_nodes + 1) for axis in ("x", "y", "z")]
+stiffness_matrix = pd.DataFrame(np.zeros((n_dof, n_dof)), index=labels, columns=labels)
