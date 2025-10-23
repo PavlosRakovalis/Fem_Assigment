@@ -49,6 +49,7 @@ plt.show()
 
 
 elements = pd.DataFrame({
+    'Element Number': [1, 2, 3, 4, 5],
     'Node1': [1, 2, 3, 4, 1],
     'Node2': [2, 3, 4, 1, 3],
     'E': [0, 0, 0, 0, 0],
@@ -67,6 +68,7 @@ plt.show()
 
 
 
+
 # Create empty stiffness matrix (3 DOF per node: x, y, z)
 num_nodes = len(points)
 n_dof = 3 * num_nodes
@@ -79,7 +81,26 @@ stiffness_matrix = pd.DataFrame(np.zeros((n_dof, n_dof)), index=row_labels, colu
 
 
 
+# For every element number "a" the stiffeness matrix in its local coordinates is equal with the image that i gave you. This matrix is the k_e_a.
+# I want you to 
 
+# Loop through each element in the elements DataFrame
+for i in range(len(elements)):
+    # Get node coordinates for this element
+    node1_idx = elements['Node1'][i] - 1
+    node2_idx = elements['Node2'][i] - 1
+
+    x1, y1, z1 = points.loc[node1_idx, ['X', 'Y', 'Z']]
+    x2, y2, z2 = points.loc[node2_idx, ['X', 'Y', 'Z']]
+
+    # Calculate element length
+    length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
+
+    print(f"Element {elements['Element Number'][i]}: Length = {length:.4f}")
+
+    # Compute local stiffness matrix k_e_a for this element 
+    E = elements['E'][i]
+    A = 1.0  # Assume unit cross-sectional area for simplicity  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!prosoxi!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Den ishiei prpeei na to allaskw avrio 
 
 
 
@@ -141,3 +162,6 @@ def display_matrix_table(df, title="Stiffness Matrix"):
 
 # Display the stiffness matrix
 display_matrix_table(stiffness_matrix, "Stiffness Matrix")
+
+
+
