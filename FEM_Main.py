@@ -3,6 +3,13 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import tkinter as tk
 from tkinter import ttk
+from geometry_utils import rotate_points_around_y
+
+
+
+
+
+
 
 
 
@@ -16,25 +23,131 @@ points = pd.DataFrame({
     'Z': [0.0, 0.0, 0.0, 0.0]
 })
 
+
+
+
+
+##I will now try to enter the nodes of the structure in a fast way using a a loop
+
+
+L = 1.5 * 1.13
+A = 1.2 * 1.69
+phi = 60 + 9.1 #degrees
+
+
+# Arhika estw oti to simeio 0 ,0,0 einai stin thesi opou pianei o geranos 
+
+
+
+# Add a new point at x = A, y = -L/2, z = 0
+new_node = pd.DataFrame({
+    'Node Number': [len(points) + 1],
+    'X': [A],
+    'Y': [-L/2],
+    'Z': [0.0]
+})
+points = pd.concat([points, new_node], ignore_index=True)
+
+# Add a new point at x = A, y = +L/2, z = 0
+new_node = pd.DataFrame({
+    'Node Number': [len(points) + 1],
+    'X': [A],
+    'Y': [L/2],
+    'Z': [0.0]
+})
+points = pd.concat([points, new_node], ignore_index=True)
+
+
+
+# Add 7 points at z = -L/2, y = -L/2, spaced by L in x dimension starting at x = A+L
+for i in range(7):
+    new_node = pd.DataFrame({
+        'Node Number': [len(points) + 1],
+        'X': [A + L + i * L],
+        'Y': [-L/2],
+        'Z': [-L/2]
+    })
+    points = pd.concat([points, new_node], ignore_index=True)
+
+
+
+# Add 7 points at z = -L/2, y = L/2, spaced by L in x dimension starting at x = A+L
+for i in range(7):
+    new_node = pd.DataFrame({
+        'Node Number': [len(points) + 1],
+        'X': [A + L + i * L],
+        'Y': [L/2],
+        'Z': [-L/2]
+    })
+    points = pd.concat([points, new_node], ignore_index=True)
+
+
+# Add 6 points at z = +L/2, y = -L/2, spaced by L in x dimension starting at x = A+L
+for i in range(6):
+    new_node = pd.DataFrame({
+        'Node Number': [len(points) + 1],
+        'X': [A + L + i * L],
+        'Y': [-L/2],
+        'Z': [L/2]
+    })
+    points = pd.concat([points, new_node], ignore_index=True)
+
+
+# Add 6 points at z = L/2, y = L/2, spaced by L in x dimension starting at x = A+L
+for i in range(6):
+    new_node = pd.DataFrame({
+        'Node Number': [len(points) + 1],
+        'X': [A + L + i * L],
+        'Y': [L/2],
+        'Z': [L/2]
+    })
+    points = pd.concat([points, new_node], ignore_index=True)
+
+# Add a point at x = A + L * 6.5, y = 0, z = -1.5*L
+new_node = pd.DataFrame({
+    'Node Number': [len(points) + 1],
+    'X': [A + L * 6.5],
+    'Y': [0],
+    'Z': [-1.5 * L]
+})
+points = pd.concat([points, new_node], ignore_index=True)
+
+
+
+
+
+
+
+
+
+# Optionally rotate the structure about Y before plotting/analysis
+# Set angle_deg to your desired rotation (degrees). Leave 0 for no rotation.
+angle_deg = - phi # e.g., 30.0 to rotate 30 degrees about +Y
+# You can also change the pivot point if needed: origin=(x0, y0, z0)
+points = rotate_points_around_y(points, angle_deg, origin=(A, 0.0, 0.0))
+
 # Convert to numpy array for compatibility with existing plotting code
 points_array = points[['X', 'Y', 'Z']].to_numpy()
 
-# Create scatter plot
-plt.figure(figsize=(8, 6))
-plt.scatter(points['X'], points['Y'], color='blue', marker='o')
+# Create interactive 3D scatter plot
+fig = plt.figure(figsize=(10, 8))
+ax = fig.add_subplot(111, projection='3d')
+
+# Plot points
+ax.scatter(points['X'], points['Y'], points['Z'], color='blue', marker='o', s=100)
 
 # Add node numbers as labels
 for i, row in points.iterrows():
-    plt.annotate(f'Node {row["Node Number"]}', 
-                (row['X'], row['Y']), 
-                xytext=(5, 5), 
-                textcoords='offset points')
+    ax.text(row['X'], row['Y'], row['Z'], 
+            f'  Node {row["Node Number"]}', 
+            fontsize=10)
 
-plt.grid(True)
-plt.xlabel('X')
-plt.ylabel('Y')
-plt.title('2D Points Plot')
-plt.axis('equal')
+ax.set_xlabel('X')
+ax.set_ylabel('Y')
+ax.set_zlabel('Z')
+ax.set_title('3D Points Plot')
+ax.grid(True)
+
 plt.show()
 
 
@@ -56,14 +169,57 @@ elements = pd.DataFrame({
     'V': [0, 0, 0, 0, 0]
 })
 
+
+
+
+
+# Create interactive 3D plot for elements
+fig2 = plt.figure(figsize=(10, 8))
+ax2 = fig2.add_subplot(111, projection='3d')
+
+# Plot points
+ax2.scatter(points['X'], points['Y'], points['Z'], color='blue', marker='o', s=100)
+
+# Add node numbers as labels
+for i, row in points.iterrows():
+    ax2.text(row['X'], row['Y'], row['Z'], 
+            f'  Node {row["Node Number"]}', 
+            fontsize=10)
+
 # Plot the connections between points
 for i in range(len(elements)):
     n1 = elements['Node1'][i] - 1  # Adjust for 0-based indexing
     n2 = elements['Node2'][i] - 1
-    plt.plot([points['X'].iloc[n1], points['X'].iloc[n2]], 
-             [points['Y'].iloc[n1], points['Y'].iloc[n2]], 'k-')
+    ax2.plot([points['X'].iloc[n1], points['X'].iloc[n2]], 
+             [points['Y'].iloc[n1], points['Y'].iloc[n2]],
+             [points['Z'].iloc[n1], points['Z'].iloc[n2]], 'k-', linewidth=2)
+
+ax2.set_xlabel('X')
+ax2.set_ylabel('Y')
+ax2.set_zlabel('Z')
+ax2.set_title('3D Elements Plot')
+ax2.grid(True)
 
 plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
