@@ -146,6 +146,7 @@ points = pd.DataFrame({
 L = 1.5 * 1.13
 A = 1.2 * 1.69
 phi = 60 + 9.1 #degrees
+A_0 = 6 * (0.5 + 0.13 )
 
 
 # Arhika estw oti to simeio 0 ,0,0 einai stin thesi opou pianei o geranos 
@@ -501,8 +502,67 @@ else:
     print(f"Total elements after adding 6 specific connections: {len(elements)}")
 
 
-# Display the elements DataFrame in an interactive scrollable window
+
+
+
+
+
+
+# Loop through each element in the elements DataFrame
+element_lengths = []
+
+for i in range(len(elements)):
+    # Get node coordinates for this element
+    node1_idx = elements.iloc[i]['Node1'] - 1
+    node2_idx = elements.iloc[i]['Node2'] - 1
+
+    x1, y1, z1 = points.loc[node1_idx, ['X', 'Y', 'Z']]
+    x2, y2, z2 = points.loc[node2_idx, ['X', 'Y', 'Z']]
+
+    # Calculate element length
+    length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
+    element_lengths.append(length)
+
+    print(f"Element {elements.iloc[i]['Element Number']}: Length = {length:.4f}")
+
+# Add 'Element Length' column to elements DataFrame
+elements['Element Length'] = element_lengths
+
+# Add 'Element Cross Section' column (empty for now)
+elements['Element Cross Section'] = np.nan
+
+print(f"\nAdded 'Element Length' and 'Element Cross Section' columns to elements DataFrame")
+
+# Set cross-sectional areas based on element length
+for i in range(len(elements)):
+    length = elements.iloc[i]['Element Length']
+    
+    if length < 1.9:  # Straight elements
+        elements.loc[i, 'Element Cross Section'] = 1.5 * A_0
+    elif length > 2:  # Diagonal elements
+        elements.loc[i, 'Element Cross Section'] = 0.5 * A_0
+    # Elements between 1.9 and 2 will remain NaN
+
+print(f"\nCross-sectional areas assigned:")
+print(f"  Straight elements (L < 1.9): {1.5 * A_0:.6f} m²")
+print(f"  Diagonal elements (L > 2): {0.5 * A_0:.6f} m²")
+
+# Count elements by type
+num_straight = len(elements[elements['Element Length'] < 1.9])
+num_diagonal = len(elements[elements['Element Length'] > 2])
+num_unassigned = len(elements[elements['Element Cross Section'].isna()])
+
+print(f"\nElement count by type:")
+print(f"  Straight: {num_straight}")
+print(f"  Diagonal: {num_diagonal}")
+print(f"  Unassigned: {num_unassigned}")
+
+
+# Display the elements DataFrame in an interactive scrollable window (after adding all columns)
 display_matrix_table(elements, "Elements DataFrame")
+
+
+
 
 
 
@@ -1030,17 +1090,10 @@ fig_plotly_elements.show()
 
 
 
-# Calculate distance between node 2 and node 17
-node2_coords = points[points['Node Number'] == 2][['X', 'Y', 'Z']].values[0]
-node17_coords = points[points['Node Number'] == 17][['X', 'Y', 'Z']].values[0]
 
-distance_2_17 = np.sqrt((node17_coords[0] - node2_coords[0])**2 + 
-                        (node17_coords[1] - node2_coords[1])**2 + 
-                        (node17_coords[2] - node2_coords[2])**2)
 
-print(f"\nDistance between Node 2 and Node 17: {distance_2_17:.4f}")
-print(f"Node 2 coordinates: X={node2_coords[0]:.4f}, Y={node2_coords[1]:.4f}, Z={node2_coords[2]:.4f}")
-print(f"Node 17 coordinates: X={node17_coords[0]:.4f}, Y={node17_coords[1]:.4f}, Z={node17_coords[2]:.4f}")
+
+
 
 
 
@@ -1102,37 +1155,81 @@ col_labels = [f"V{n}{axis}" for n in range(1, num_nodes + 1) for axis in ("x", "
 stiffness_matrix = pd.DataFrame(np.zeros((n_dof, n_dof)), index=row_labels, columns=col_labels)
 
 
-
-
-
-
-# For every element number "a" the stiffeness matrix in its local coordinates is equal with the image that i gave you. This matrix is the k_e_a.
-# I want you to 
-
-# Loop through each element in the elements DataFrame
-for i in range(len(elements)):
-    # Get node coordinates for this element
-    node1_idx = elements['Node1'][i] - 1
-    node2_idx = elements['Node2'][i] - 1
-
-    x1, y1, z1 = points.loc[node1_idx, ['X', 'Y', 'Z']]
-    x2, y2, z2 = points.loc[node2_idx, ['X', 'Y', 'Z']]
-
-    # Calculate element length
-    length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
-
-    print(f"Element {elements['Element Number'][i]}: Length = {length:.4f}")
-
-    # Compute local stiffness matrix k_e_a for this element 
-    E = elements['E'][i]
-    A = 1.0  # Assume unit cross-sectional area for simplicity  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!prosoxi!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Den ishiei prpeei na to allaskw avrio 
-
-
-
-
 # Display the stiffness matrix in an interactive scrollable window using tkinter
 # Display the stiffness matrix
 display_matrix_table(stiffness_matrix, "Stiffness Matrix")
+
+
+
+
+
+
+# Loop through all elements and assemble global stiffness matrix
+for element_idx in range(len(elements)):
+    # Get element properties
+    elem = elements.iloc[element_idx]
+    node1_num = int(elem['Node1'])
+    node2_num = int(elem['Node2'])
+    E = elem['E']  # Young's modulus
+    A = elem['Element Cross Section']  # Cross-sectional area
+    l_e = elem['Element Length']  # Element length
+
+    # Get node coordinates
+    node1 = points[points['Node Number'] == node1_num].iloc[0]
+    node2 = points[points['Node Number'] == node2_num].iloc[0]
+
+    X_i = node1['X']
+    Y_i = node1['Y']
+    Z_i = node1['Z']
+
+    X_j = node2['X']
+    Y_j = node2['Y']
+    Z_j = node2['Z']
+
+    # Calculate direction cosines
+    l_y = (X_j - X_i) / l_e  # cos(x, X)
+    m_y = (Y_j - Y_i) / l_e  # cos(x, Y)
+    n_y = (Z_j - Z_i) / l_e  # cos(x, Z)
+
+    # Define the local stiffness matrix K_e for the element
+    K_e = (A * E / l_e) * np.array([
+        [l_y**2,        l_y*m_y,      l_y*n_y,     -l_y**2,       -l_y*m_y,     -l_y*n_y    ],
+        [l_y*m_y,       m_y**2,       m_y*n_y,     -l_y*m_y,      -m_y**2,      -m_y*n_y    ],
+        [l_y*n_y,       m_y*n_y,      n_y**2,      -l_y*n_y,      -m_y*n_y,     -n_y**2     ],
+        [-l_y**2,       -l_y*m_y,     -l_y*n_y,     l_y**2,        l_y*m_y,      l_y*n_y    ],
+        [-l_y*m_y,      -m_y**2,      -m_y*n_y,     l_y*m_y,       m_y**2,       m_y*n_y    ],
+        [-l_y*n_y,      -m_y*n_y,     -n_y**2,      l_y*n_y,       m_y*n_y,      n_y**2     ]
+    ])
+
+    # Map local DOFs to global DOFs
+    global_dofs = [
+        (node1_num - 1) * 3 + 0,  # Node 1 x
+        (node1_num - 1) * 3 + 1,  # Node 1 y
+        (node1_num - 1) * 3 + 2,  # Node 1 z
+        (node2_num - 1) * 3 + 0,  # Node 2 x
+        (node2_num - 1) * 3 + 1,  # Node 2 y
+        (node2_num - 1) * 3 + 2   # Node 2 z
+    ]
+
+    # Add K_e values to global stiffness matrix
+    for i, global_i in enumerate(global_dofs):
+        for j, global_j in enumerate(global_dofs):
+            stiffness_matrix.iloc[global_i, global_j] += K_e[i, j]
+
+print(f"\nGlobal stiffness matrix assembly complete.")
+print(f"Processed {len(elements)} elements.")
+
+# Display the assembled global stiffness matrix in an interactive scrollable window
+display_matrix_table(stiffness_matrix, "Assembled Global Stiffness Matrix")
+
+# Optionally, also print summary statistics
+print(f"\nGlobal Stiffness Matrix Summary:")
+print(f"  Size: {stiffness_matrix.shape[0]} × {stiffness_matrix.shape[1]}")
+print(f"  Max value: {stiffness_matrix.values.max():.2e}")
+print(f"  Min value: {stiffness_matrix.values.min():.2e}")
+print(f"  Non-zero elements: {np.count_nonzero(stiffness_matrix.values)}")
+
+
 
 
 
