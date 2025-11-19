@@ -1271,3 +1271,6 @@ print(f"  Non-zero elements: {np.count_nonzero(stiffness_matrix.values)}")
 
 
 
+
+
+
