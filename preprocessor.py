@@ -1,0 +1,544 @@
+"""
+FEM Pre-Processor Module
+========================
+This module handles geometry creation, boundary conditions definition,
+and exports the structure data to a text file for the solver.
+
+Author: Copilot
+Date: November 2025
+"""
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import plotly.io as pio
+from geometry_utils import rotate_points_around_y
+import os
+
+# Configuration
+BROWSER = 'chrome'
+if BROWSER:
+    pio.renderers.default = 'browser'
+
+class FEMPreProcessor:
+    """Handles geometry creation and boundary conditions for FEM analysis"""
+    
+    def __init__(self):
+        self.points = pd.DataFrame(columns=['Node Number', 'X', 'Y', 'Z'])
+        self.elements = pd.DataFrame(columns=['Element Number', 'Node1', 'Node2', 'E', 'V'])
+        self.boundary_conditions = {}  # node_id: {'Ux': 0/1, 'Uy': 0/1, 'Uz': 0/1}
+        self.loads = {}  # node_id: {'Fx': value, 'Fy': value, 'Fz': value}
+        self.materials = {'STEEL': {'E': 210e9, 'nu': 0.3}}
+        
+        # Geometry parameters
+        self.L = 1.5 * 1.13
+        self.A = 1.2 * 1.69
+        self.phi = 60 + 9.1
+        self.A_0 = 6 * (0.5 + 0.13)
+        
+    def create_geometry(self):
+        """Create the truss geometry"""
+        print("="*80)
+        print("CREATING GEOMETRY")
+        print("="*80)
+        
+        # Add initial nodes (WITHOUT rotation)
+        self._add_initial_nodes()
+        
+        print(f"✓ Created {len(self.points)} nodes")
+        
+    def _add_initial_nodes(self):
+        """Add all nodes to the structure"""
+        L, A = self.L, self.A
+        
+        # Node 1: x = A, y = -L/2, z = 0
+        self._add_node(A, -L/2, 0.0)
+        
+        # Node 2: x = A, y = +L/2, z = 0
+        self._add_node(A, L/2, 0.0)
+        
+        # Nodes 3-9: z = -L/2, y = -L/2
+        for i in range(7):
+            self._add_node(A + L + i * L, -L/2, -L/2)
+        
+        # Nodes 10-16: z = -L/2, y = L/2
+        for i in range(7):
+            self._add_node(A + L + i * L, L/2, -L/2)
+        
+        # Nodes 17-22: z = +L/2, y = -L/2
+        for i in range(6):
+            self._add_node(A + L + i * L, -L/2, L/2)
+        
+        # Nodes 23-28: z = L/2, y = L/2
+        for i in range(6):
+            self._add_node(A + L + i * L, L/2, L/2)
+        
+        # Node 29: Load application point
+        self._add_node(A + L * 6.5, 0, -1.5 * L)
+        
+    def _add_node(self, x, y, z):
+        """Add a single node"""
+        new_node = pd.DataFrame({
+            'Node Number': [len(self.points) + 1],
+            'X': [x],
+            'Y': [y],
+            'Z': [z]
+        })
+        self.points = pd.concat([self.points, new_node], ignore_index=True)
+        
+    def create_elements(self):
+        """Create all truss elements"""
+        print("\nCREATING ELEMENTS")
+        print("="*80)
+        
+        element_counter = 1
+        tolerance = 1e-6
+        max_element_length = 1.55 * self.L
+        
+        # Create axis-aligned elements
+        element_counter = self._create_axis_aligned_elements(element_counter, tolerance, max_element_length)
+        print(f"  After axis-aligned: {len(self.elements)} elements")
+        
+        # Add diagonal bracing
+        element_counter = self._add_diagonal_bracing(element_counter, tolerance, max_element_length)
+        print(f"  After diagonal bracing: {len(self.elements)} elements")
+        
+        # Add connections from Node 29
+        element_counter = self._add_node29_connections(element_counter)
+        print(f"  After Node 29 connections: {len(self.elements)} elements")
+        
+        # Add specific connections
+        element_counter = self._add_specific_connections(element_counter)
+        print(f"  After specific connections: {len(self.elements)} elements")
+        
+        # Calculate element lengths and assign cross sections
+        self._calculate_element_properties()
+        
+        print(f"✓ Created {len(self.elements)} elements")
+    
+    def rotate_structure(self):
+        """Rotate the structure around Y-axis"""
+        print("\nROTATING STRUCTURE")
+        print("="*80)
+        self.points = rotate_points_around_y(self.points, -self.phi, origin=(self.A, 0.0, 0.0))
+        print(f"✓ Structure rotated by {-self.phi:.1f} degrees around Y-axis")
+        
+    def _create_axis_aligned_elements(self, element_counter, tolerance, max_length):
+        """Create elements parallel to X, Y, or Z axes"""
+        axis_aligned_count = 0
+        for i in range(len(self.points)):
+            node1 = self.points.iloc[i]
+            node1_num = int(node1['Node Number'])
+            
+            for j in range(i + 1, len(self.points)):
+                node2 = self.points.iloc[j]
+                node2_num = int(node2['Node Number'])
+                
+                dx = abs(node2['X'] - node1['X'])
+                dy = abs(node2['Y'] - node1['Y'])
+                dz = abs(node2['Z'] - node1['Z'])
+                
+                element_length = np.sqrt(dx**2 + dy**2 + dz**2)
+                
+                if element_length > max_length:
+                    continue
+                
+                # Check axis alignment
+                is_x_aligned = dx > tolerance and dy < tolerance and dz < tolerance
+                is_y_aligned = dx < tolerance and dy > tolerance and dz < tolerance
+                is_z_aligned = dx < tolerance and dy < tolerance and dz > tolerance
+                
+                if is_x_aligned or is_y_aligned or is_z_aligned:
+                    self._add_element(element_counter, node1_num, node2_num)
+                    element_counter += 1
+                    
+        return element_counter
+    
+    def _add_diagonal_bracing(self, element_counter, tolerance, max_length):
+        """Add diagonal bracing elements"""
+        max_diagonal_length = min(np.sqrt(2 * self.L**2), max_length)
+        
+        existing = set()
+        for idx in range(len(self.elements)):
+            n1 = int(self.elements.iloc[idx]['Node1'])
+            n2 = int(self.elements.iloc[idx]['Node2'])
+            existing.add(tuple(sorted([n1, n2])))
+        
+        for i in range(len(self.points)):
+            node1 = self.points.iloc[i]
+            node1_num = int(node1['Node Number'])
+            
+            for j in range(i + 1, len(self.points)):
+                node2 = self.points.iloc[j]
+                node2_num = int(node2['Node Number'])
+                
+                connection = tuple(sorted([node1_num, node2_num]))
+                if connection in existing:
+                    continue
+                
+                dx = abs(node2['X'] - node1['X'])
+                dy = abs(node2['Y'] - node1['Y'])
+                dz = abs(node2['Z'] - node1['Z'])
+                
+                distance = np.sqrt(dx**2 + dy**2 + dz**2)
+                
+                if distance > max_diagonal_length + tolerance:
+                    continue
+                
+                # Check coplanarity
+                is_yz_plane = dx < tolerance and dy > tolerance and dz > tolerance
+                is_xz_plane = dx > tolerance and dy < tolerance and dz > tolerance
+                is_xy_plane = dx > tolerance and dy > tolerance and dz < tolerance
+                
+                if is_yz_plane or is_xz_plane or is_xy_plane:
+                    self._add_element(element_counter, node1_num, node2_num)
+                    existing.add(connection)
+                    element_counter += 1
+                    
+        return element_counter
+    
+    def _add_node29_connections(self, element_counter):
+        """Add connections from Node 29"""
+        connecting_nodes = [8, 9, 15, 16]
+        for target in connecting_nodes:
+            self._add_element(element_counter, 29, target)
+            element_counter += 1
+        return element_counter
+    
+    def _add_specific_connections(self, element_counter):
+        """Add specific connections"""
+        connections = [(9, 28), (16, 22), (23, 1), (2, 17), (1, 10), (2, 3)]
+        
+        existing = set()
+        for idx in range(len(self.elements)):
+            n1 = int(self.elements.iloc[idx]['Node1'])
+            n2 = int(self.elements.iloc[idx]['Node2'])
+            existing.add(tuple(sorted([n1, n2])))
+        
+        for n1, n2 in connections:
+            connection = tuple(sorted([n1, n2]))
+            if connection not in existing:
+                self._add_element(element_counter, n1, n2)
+                existing.add(connection)
+                element_counter += 1
+                
+        return element_counter
+    
+    def _add_element(self, elem_num, node1, node2):
+        """Add a single element"""
+        new_elem = pd.DataFrame({
+            'Element Number': [elem_num],
+            'Node1': [node1],
+            'Node2': [node2],
+            'E': [210e9],
+            'V': [0.3]
+        })
+        self.elements = pd.concat([self.elements, new_elem], ignore_index=True)
+    
+    def _calculate_element_properties(self):
+        """Calculate element lengths and assign cross sections"""
+        element_lengths = []
+        cross_sections = []
+        
+        for i in range(len(self.elements)):
+            node1_idx = int(self.elements.iloc[i]['Node1']) - 1
+            node2_idx = int(self.elements.iloc[i]['Node2']) - 1
+            
+            x1, y1, z1 = self.points.iloc[node1_idx][['X', 'Y', 'Z']]
+            x2, y2, z2 = self.points.iloc[node2_idx][['X', 'Y', 'Z']]
+            
+            length = np.sqrt((x2-x1)**2 + (y2-y1)**2 + (z2-z1)**2)
+            element_lengths.append(length)
+            
+            # Assign cross section based on length
+            if length < 1.9:
+                cross_sections.append(1.5 * self.A_0 * 1e-4)  # Straight elements (m²)
+            elif length > 2:
+                cross_sections.append(0.5 * self.A_0 * 1e-4)  # Diagonal elements (m²)
+            else:
+                cross_sections.append(1.0 * self.A_0 * 1e-4)  # Default
+        
+        self.elements['Element Length'] = element_lengths
+        self.elements['Element Cross Section'] = cross_sections
+        
+    def add_boundary_condition(self, node_id, ux=0, uy=0, uz=0):
+        """Add boundary condition (0=free, 1=fixed)"""
+        self.boundary_conditions[node_id] = {'Ux': ux, 'Uy': uy, 'Uz': uz}
+        
+    def add_load(self, node_id, fx=0.0, fy=0.0, fz=0.0):
+        """Add load at node (in Newtons)"""
+        self.loads[node_id] = {'Fx': fx, 'Fy': fy, 'Fz': fz}
+        
+    def set_default_bcs_and_loads(self):
+        """Set default boundary conditions and loads for this structure"""
+        print("\nSETTING BOUNDARY CONDITIONS AND LOADS")
+        print("="*80)
+        
+        # Fixed supports
+        fixed_nodes = [1, 2, 19, 25, 22, 28]
+        for node in fixed_nodes:
+            self.add_boundary_condition(node, ux=1, uy=1, uz=1)
+        
+        print(f"  Fixed supports at nodes: {fixed_nodes}")
+        
+        # Applied load
+        self.add_load(29, fx=0.0, fy=0.0, fz=-2000.0)
+        print(f"  Applied load: Fz = -2000 N at Node 29")
+        
+        print(f"✓ Boundary conditions and loads defined")
+        
+    def visualize_geometry(self, show_plot=True):
+        """Visualize the structure geometry with Plotly"""
+        print("\nVISUALIZING GEOMETRY")
+        print("="*80)
+        
+        fig = go.Figure()
+        
+        # Add elements
+        edge_x, edge_y, edge_z = [], [], []
+        for idx in range(len(self.elements)):
+            node1_idx = int(self.elements.iloc[idx]['Node1']) - 1
+            node2_idx = int(self.elements.iloc[idx]['Node2']) - 1
+            
+            x1, y1, z1 = self.points.iloc[node1_idx][['X', 'Y', 'Z']]
+            x2, y2, z2 = self.points.iloc[node2_idx][['X', 'Y', 'Z']]
+            
+            edge_x.extend([x1, x2, None])
+            edge_y.extend([y1, y2, None])
+            edge_z.extend([z1, z2, None])
+        
+        fig.add_trace(go.Scatter3d(
+            x=edge_x, y=edge_y, z=edge_z,
+            mode='lines',
+            line=dict(color='black', width=3),
+            name='Elements'
+        ))
+        
+        # Add nodes
+        fig.add_trace(go.Scatter3d(
+            x=self.points['X'],
+            y=self.points['Y'],
+            z=self.points['Z'],
+            mode='markers+text',
+            marker=dict(size=5, color='red'),
+            text=[f"{int(n)}" for n in self.points['Node Number']],
+            textposition='top center',
+            name='Nodes'
+        ))
+        
+        # Highlight fixed supports
+        fixed_nodes = list(self.boundary_conditions.keys())
+        if fixed_nodes:
+            fixed_coords = self.points[self.points['Node Number'].isin(fixed_nodes)]
+            fig.add_trace(go.Scatter3d(
+                x=fixed_coords['X'],
+                y=fixed_coords['Y'],
+                z=fixed_coords['Z'],
+                mode='markers',
+                marker=dict(size=10, color='blue', symbol='diamond'),
+                name='Fixed Supports'
+            ))
+        
+        # Highlight loaded nodes
+        loaded_nodes = list(self.loads.keys())
+        if loaded_nodes:
+            loaded_coords = self.points[self.points['Node Number'].isin(loaded_nodes)]
+            fig.add_trace(go.Scatter3d(
+                x=loaded_coords['X'],
+                y=loaded_coords['Y'],
+                z=loaded_coords['Z'],
+                mode='markers',
+                marker=dict(size=10, color='green', symbol='square'),
+                name='Loaded Nodes'
+            ))
+        
+        # Add force arrows
+        force_scale = 0.0008  # Scale factor for arrow length
+        arrow_color = 'magenta'
+        arrow_width = 8
+        cone_size_ratio = 0.25  # Size of arrowhead relative to total length
+        
+        for idx, (node_num, load) in enumerate(self.loads.items()):
+            fx, fy, fz = load['Fx'], load['Fy'], load['Fz']
+            magnitude = np.sqrt(fx**2 + fy**2 + fz**2)
+            
+            if magnitude < 1e-6:
+                continue
+            
+            # Get node position
+            node_pos = self.points[self.points['Node Number'] == node_num].iloc[0]
+            x0, y0, z0 = node_pos['X'], node_pos['Y'], node_pos['Z']
+            
+            # Calculate arrow direction and length
+            arrow_len = magnitude * force_scale
+            dx_total = fx / magnitude * arrow_len
+            dy_total = fy / magnitude * arrow_len
+            dz_total = fz / magnitude * arrow_len
+            
+            # Calculate shaft and cone portions
+            shaft_ratio = 1 - cone_size_ratio
+            dx_shaft = dx_total * shaft_ratio
+            dy_shaft = dy_total * shaft_ratio
+            dz_shaft = dz_total * shaft_ratio
+            
+            dx_cone = dx_total * cone_size_ratio
+            dy_cone = dy_total * cone_size_ratio
+            dz_cone = dz_total * cone_size_ratio
+            
+            # Add force line (shaft of arrow)
+            show_in_legend = (idx == 0)
+            legend_label = f"External Force: {magnitude:.0f} N" if show_in_legend else None
+            
+            fig.add_trace(go.Scatter3d(
+                x=[x0, x0 + dx_shaft],
+                y=[y0, y0 + dy_shaft],
+                z=[z0, z0 + dz_shaft],
+                mode='lines',
+                line=dict(color=arrow_color, width=arrow_width),
+                showlegend=show_in_legend,
+                name=legend_label,
+                hovertemplate=f'<b>External Force on Node {node_num}</b><br>Magnitude: {magnitude:.0f} N<br>Fx: {fx:.0f} N<br>Fy: {fy:.0f} N<br>Fz: {fz:.0f} N<extra></extra>'
+            ))
+            
+            # Add arrowhead using cone
+            fig.add_trace(go.Cone(
+                x=[x0 + dx_shaft],
+                y=[y0 + dy_shaft],
+                z=[z0 + dz_shaft],
+                u=[dx_cone],
+                v=[dy_cone],
+                w=[dz_cone],
+                colorscale=[[0, arrow_color], [1, arrow_color]],
+                showscale=False,
+                sizemode='absolute',
+                sizeref=arrow_len * 0.4,
+                anchor='tail',
+                showlegend=False,
+                hoverinfo='skip'
+            ))
+        
+        fig.update_layout(
+            title='FEM Structure Geometry',
+            scene=dict(
+                xaxis_title='X (m)',
+                yaxis_title='Y (m)',
+                zaxis_title='Z (m)',
+                aspectmode='data'
+            ),
+            width=1200,
+            height=900
+        )
+        
+        if show_plot:
+            fig.show()
+        
+        # Save HTML
+        fig.write_html('geometry_visualization.html')
+        print(f"✓ Geometry visualization saved to: geometry_visualization.html")
+        
+        return fig
+    
+    def export_to_file(self, filename='data/structure.dat'):
+        """Export structure data to text file"""
+        print("\nEXPORTING TO FILE")
+        print("="*80)
+        
+        # Create data directory if it doesn't exist
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        
+        with open(filename, 'w') as f:
+            # Header
+            f.write("# FEM Structure Data File\n")
+            f.write(f"# Generated by FEM Pre-Processor\n")
+            f.write(f"# Date: {pd.Timestamp.now()}\n\n")
+            
+            # Parameters
+            f.write("PARAMETERS\n")
+            f.write(f"L {self.L:.6f}\n")
+            f.write(f"A {self.A:.6f}\n")
+            f.write(f"phi {self.phi:.6f}\n")
+            f.write(f"A_0 {self.A_0:.6f}\n")
+            f.write("\n")
+            
+            # Materials
+            f.write("MATERIALS\n")
+            for mat_name, props in self.materials.items():
+                f.write(f"{mat_name} {props['E']:.6e} {props['nu']:.6f}\n")
+            f.write("\n")
+            
+            # Nodes
+            f.write("NODES\n")
+            f.write("# Node_ID X Y Z\n")
+            for idx in range(len(self.points)):
+                node = self.points.iloc[idx]
+                f.write(f"{int(node['Node Number'])} {node['X']:.6f} {node['Y']:.6f} {node['Z']:.6f}\n")
+            f.write("\n")
+            
+            # Elements
+            f.write("ELEMENTS\n")
+            f.write("# Elem_ID Node1 Node2 CrossSection E nu\n")
+            for idx in range(len(self.elements)):
+                elem = self.elements.iloc[idx]
+                f.write(f"{int(elem['Element Number'])} {int(elem['Node1'])} {int(elem['Node2'])} "
+                       f"{elem['Element Cross Section']:.6e} {elem['E']:.6e} {elem['V']:.6f}\n")
+            f.write("\n")
+            
+            # Boundary Conditions
+            f.write("BOUNDARY_CONDITIONS\n")
+            f.write("# Node_ID Ux Uy Uz (0=free, 1=fixed)\n")
+            for node_id, bc in self.boundary_conditions.items():
+                f.write(f"{node_id} {bc['Ux']} {bc['Uy']} {bc['Uz']}\n")
+            f.write("\n")
+            
+            # Loads
+            f.write("LOADS\n")
+            f.write("# Node_ID Fx Fy Fz (Newtons)\n")
+            for node_id, load in self.loads.items():
+                f.write(f"{node_id} {load['Fx']:.6f} {load['Fy']:.6f} {load['Fz']:.6f}\n")
+            f.write("\n")
+            
+            f.write("END\n")
+        
+        print(f"✓ Structure data exported to: {filename}")
+        print(f"  - {len(self.points)} nodes")
+        print(f"  - {len(self.elements)} elements")
+        print(f"  - {len(self.boundary_conditions)} boundary conditions")
+        print(f"  - {len(self.loads)} loads")
+
+
+def main():
+    """Main execution function"""
+    print("\n" + "="*80)
+    print("FEM PRE-PROCESSOR")
+    print("="*80 + "\n")
+    
+    # Create preprocessor
+    preprocessor = FEMPreProcessor()
+    
+    # Create geometry
+    preprocessor.create_geometry()
+    
+    # Create elements
+    preprocessor.create_elements()
+    
+    # Rotate structure (AFTER creating elements)
+    preprocessor.rotate_structure()
+    
+    # Set boundary conditions and loads
+    preprocessor.set_default_bcs_and_loads()
+    
+    # Visualize
+    preprocessor.visualize_geometry(show_plot=True)
+    
+    # Export to file
+    preprocessor.export_to_file('data/structure.dat')
+    
+    print("\n" + "="*80)
+    print("PRE-PROCESSOR COMPLETED SUCCESSFULLY")
+    print("="*80 + "\n")
+    print("Next step: Run solver.py to solve the FEM system")
+    print("  Command: python solver.py")
+
+
+if __name__ == "__main__":
+    main()
