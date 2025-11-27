@@ -184,8 +184,9 @@ points = pd.DataFrame({
 L = 1.5 * 1.13  # Length in meters
 A = 1.2 * 1.69  # Distance in meters
 phi = 60 + 9.1  # degrees
-# A_0 = 6 * (0.5 + 0.13) cm² needs conversion to m²
-A_0 = 6 * (0.5 + 0.13) * 1e-4  # = 3.78 cm² = 3.78e-4 m²
+# A_0 is dimensionless: A_0 = 6 * (0.5 + 0.13) = 3.78
+# Cross-sections are then: 0.5*A_0 cm² (diagonals), 1.5*A_0 cm² (straight)
+A_0 = 6 * (0.5 + 0.13)  # = 3.78 (dimensionless)
 
 
 # Arhika estw oti to simeio 0 ,0,0 einai stin thesi opou pianei o geranos 
@@ -573,18 +574,19 @@ elements['Element Cross Section'] = np.nan
 print(f"\nAdded 'Element Length' and 'Element Cross Section' columns to elements DataFrame")
 
 # Set cross-sectional areas based on element length
+# A_0 is dimensionless, so cross-sections are in cm² and need conversion to m²
 for i in range(len(elements)):
     length = elements.iloc[i]['Element Length']
     
     if length < 1.9:  # Straight elements
-        elements.loc[i, 'Element Cross Section'] = 1.5 * A_0
+        elements.loc[i, 'Element Cross Section'] = 1.5 * A_0 * 1e-4  # Convert cm² to m²
     elif length > 2:  # Diagonal elements
-        elements.loc[i, 'Element Cross Section'] = 0.5 * A_0
+        elements.loc[i, 'Element Cross Section'] = 0.5 * A_0 * 1e-4  # Convert cm² to m²
     # Elements between 1.9 and 2 will remain NaN
 
 print(f"\nCross-sectional areas assigned:")
-print(f"  Straight elements (L < 1.9): {1.5 * A_0:.6f} m²")
-print(f"  Diagonal elements (L > 2): {0.5 * A_0:.6f} m²")
+print(f"  Straight elements (L < 1.9): {1.5 * A_0:.4f} cm² = {1.5 * A_0 * 1e-4:.6f} m²")
+print(f"  Diagonal elements (L > 2): {0.5 * A_0:.4f} cm² = {0.5 * A_0 * 1e-4:.6f} m²")
 
 # Count elements by type
 num_straight = len(elements[elements['Element Length'] < 1.9])
@@ -811,6 +813,21 @@ for node_num in [1, 2]:
     displacements.loc[uz_idx, 'Value (m)'] = 0.0
 
 print(f"\nDisplacements set to zero for nodes 1 and 2 (fixed supports)")
+
+
+# Set all displacements (Ux, Uy, Uz) to zero for nodes 19, 25, 22, 28
+for node_num in [19, 25, 22, 28]:
+    # Calculate the row indices for this node's displacements
+    ux_idx = (node_num - 1) * 3 + 0  # x-component
+    uy_idx = (node_num - 1) * 3 + 1  # y-component
+    uz_idx = (node_num - 1) * 3 + 2  # z-component
+    
+    # Set displacement values to zero
+    displacements.loc[ux_idx, 'Value (m)'] = 0.0
+    displacements.loc[uy_idx, 'Value (m)'] = 0.0
+    displacements.loc[uz_idx, 'Value (m)'] = 0.0
+
+print(f"\nDisplacements set to zero for nodes 19, 25, 22, 28 (additional fixed supports)")
 
 
 
