@@ -733,7 +733,12 @@ fig_plotly_nodes.update_layout(
     hovermode='closest'
 )
 
-fig_plotly_nodes.show()
+# ========== PERFORMANCE OPTIMIZATION ==========
+# To restore all plots and features, ask Copilot:
+# "Undo the Plotly performance optimizations - restore element labels, all 3 plots, and full hover info"
+# ==============================================
+
+# fig_plotly_nodes.show()  # Disabled for performance - too slow in browser
 
 
 
@@ -945,29 +950,30 @@ for idx in range(len(elements)):
     element_labels.append(f"E{int(elements.iloc[idx]['Element Number'])}")
 
 # Add element numbers as text labels
-fig_plotly_elements.add_trace(go.Scatter3d(
-    x=element_midpoints_x,
-    y=element_midpoints_y,
-    z=element_midpoints_z,
-    mode='text',
-    text=element_labels,
-    textfont=dict(size=8, color='green'),
-    hovertemplate='<b>%{text}</b><br>Midpoint: (%{x:.3f}, %{y:.3f}, %{z:.3f})<extra></extra>',
-    name='Element Labels',
-    showlegend=True
-))
+# DISABLED FOR PERFORMANCE - Element labels are heavy to render
+# fig_plotly_elements.add_trace(go.Scatter3d(
+#     x=element_midpoints_x,
+#     y=element_midpoints_y,
+#     z=element_midpoints_z,
+#     mode='text',
+#     text=element_labels,
+#     textfont=dict(size=8, color='green'),
+#     hovertemplate='<b>%{text}</b><br>Midpoint: (%{x:.3f}, %{y:.3f}, %{z:.3f})<extra></extra>',
+#     name='Element Labels',
+#     showlegend=True
+# ))
 
-# Add nodes as scatter points
+# Add nodes as scatter points (reduced size for performance)
 fig_plotly_elements.add_trace(go.Scatter3d(
     x=points['X'],
     y=points['Y'],
     z=points['Z'],
     mode='markers+text',
-    marker=dict(size=8, color='red', opacity=0.9),
+    marker=dict(size=5, color='red', opacity=0.9),  # Reduced from 8 to 5
     text=[f"Node {int(n)}" for n in points['Node Number']],
     textposition='top center',
-    textfont=dict(size=9),
-    hovertemplate='<b>Node %{text}</b><br>X: %{x:.3f}<br>Y: %{y:.3f}<br>Z: %{z:.3f}<extra></extra>',
+    textfont=dict(size=8),  # Reduced from 9 to 8
+    hoverinfo='skip',  # Simplified hover for performance
     name='Nodes'
 ))
 
@@ -1081,7 +1087,7 @@ fig_plotly_elements.update_layout(
     showlegend=True
 )
 
-fig_plotly_elements.show()
+# fig_plotly_elements.show()  # Disabled for performance - too slow in browser
 
 
 
@@ -1564,6 +1570,146 @@ print(f"\nDeformed structure visualization complete.")
 print(f"  Blue nodes: Original (undeformed) positions")
 print(f"  Red nodes: Deformed positions")
 print(f"  Green dashed lines: Displacement vectors")
+
+
+
+
+
+
+
+
+
+
+####################Plot MAGNIFIED Deformed Structure for Better Visualization##########################
+
+# Create magnified deformation plot to better visualize small displacements
+MAGNIFICATION_FACTOR = 1000  # Magnify displacements by 1000x for visibility
+
+print(f"\n" + "="*80)
+print(f"CREATING MAGNIFIED DEFORMATION PLOT (Scale Factor: {MAGNIFICATION_FACTOR}x)")
+print("="*80)
+
+fig_magnified = go.Figure()
+
+# Calculate MAGNIFIED deformed node positions
+magnified_points = points.copy()
+for node_num in range(1, num_nodes + 1):
+    ux_idx = (node_num - 1) * 3 + 0
+    uy_idx = (node_num - 1) * 3 + 1
+    uz_idx = (node_num - 1) * 3 + 2
+    
+    # Get node index in points DataFrame
+    node_idx = node_num - 1
+    
+    # Add MAGNIFIED displacements to original coordinates
+    magnified_points.loc[node_idx, 'X'] = points.iloc[node_idx]['X'] + u_full[ux_idx] * MAGNIFICATION_FACTOR
+    magnified_points.loc[node_idx, 'Y'] = points.iloc[node_idx]['Y'] + u_full[uy_idx] * MAGNIFICATION_FACTOR
+    magnified_points.loc[node_idx, 'Z'] = points.iloc[node_idx]['Z'] + u_full[uz_idx] * MAGNIFICATION_FACTOR
+
+# Add undeformed elements
+edge_x_undeformed_mag = []
+edge_y_undeformed_mag = []
+edge_z_undeformed_mag = []
+
+for idx in range(len(elements)):
+    node1_idx = int(elements.iloc[idx]['Node1']) - 1
+    node2_idx = int(elements.iloc[idx]['Node2']) - 1
+    
+    x1, y1, z1 = points.iloc[node1_idx][['X', 'Y', 'Z']]
+    x2, y2, z2 = points.iloc[node2_idx][['X', 'Y', 'Z']]
+    
+    edge_x_undeformed_mag.extend([x1, x2, None])
+    edge_y_undeformed_mag.extend([y1, y2, None])
+    edge_z_undeformed_mag.extend([z1, z2, None])
+
+fig_magnified.add_trace(go.Scatter3d(
+    x=edge_x_undeformed_mag,
+    y=edge_y_undeformed_mag,
+    z=edge_z_undeformed_mag,
+    mode='lines',
+    line=dict(color='lightblue', width=2, dash='dash'),
+    hoverinfo='skip',
+    name='Undeformed',
+    opacity=0.5
+))
+
+# Add MAGNIFIED deformed elements
+edge_x_magnified = []
+edge_y_magnified = []
+edge_z_magnified = []
+
+for idx in range(len(elements)):
+    node1_idx = int(elements.iloc[idx]['Node1']) - 1
+    node2_idx = int(elements.iloc[idx]['Node2']) - 1
+    
+    x1, y1, z1 = magnified_points.iloc[node1_idx][['X', 'Y', 'Z']]
+    x2, y2, z2 = magnified_points.iloc[node2_idx][['X', 'Y', 'Z']]
+    
+    edge_x_magnified.extend([x1, x2, None])
+    edge_y_magnified.extend([y1, y2, None])
+    edge_z_magnified.extend([z1, z2, None])
+
+fig_magnified.add_trace(go.Scatter3d(
+    x=edge_x_magnified,
+    y=edge_y_magnified,
+    z=edge_z_magnified,
+    mode='lines',
+    line=dict(color='red', width=4),
+    hoverinfo='skip',
+    name='Deformed (Magnified)'
+))
+
+# Add undeformed nodes
+fig_magnified.add_trace(go.Scatter3d(
+    x=points['X'],
+    y=points['Y'],
+    z=points['Z'],
+    mode='markers',
+    marker=dict(size=4, color='blue', opacity=0.5),
+    hoverinfo='skip',
+    name='Undeformed Nodes'
+))
+
+# Add MAGNIFIED deformed nodes
+fig_magnified.add_trace(go.Scatter3d(
+    x=magnified_points['X'],
+    y=magnified_points['Y'],
+    z=magnified_points['Z'],
+    mode='markers+text',
+    marker=dict(size=6, color='red', opacity=0.9),
+    text=[f"{int(n)}" for n in magnified_points['Node Number']],
+    textposition='top center',
+    textfont=dict(size=8),
+    hovertemplate='<b>Node %{text}</b><br>Magnified X: %{x:.3f} m<br>Magnified Y: %{y:.3f} m<br>Magnified Z: %{z:.3f} m<extra></extra>',
+    name='Deformed Nodes'
+))
+
+# Set equal aspect ratio and layout
+fig_magnified.update_layout(
+    title=f'MAGNIFIED Deformed Structure ({MAGNIFICATION_FACTOR}x)<br><sub>Actual Max Displacement: {np.abs(u_full).max()*1000:.4f} mm</sub>',
+    scene=dict(
+        xaxis_title='X (m)',
+        yaxis_title='Y (m)',
+        zaxis_title='Z (m)',
+        aspectmode='data',
+        camera=dict(
+            eye=dict(x=1.5, y=1.5, z=1.5)
+        )
+    ),
+    width=1200,
+    height=900,
+    hovermode='closest',
+    showlegend=True
+)
+
+fig_magnified.show()
+
+print(f"\nMagnified deformation plot created successfully!")
+print(f"  Magnification factor: {MAGNIFICATION_FACTOR}x")
+print(f"  Actual max displacement: {np.abs(u_full).max()*1000:.4f} mm")
+print(f"  Apparent displacement in plot: {np.abs(u_full).max()*MAGNIFICATION_FACTOR*1000:.2f} mm")
+print(f"  Note: This is for VISUALIZATION only - actual displacements are {MAGNIFICATION_FACTOR}x smaller!")
+print("="*80)
 
 
 
