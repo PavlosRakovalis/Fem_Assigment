@@ -1627,10 +1627,10 @@ fig_magnified.add_trace(go.Scatter3d(
     y=edge_y_undeformed_mag,
     z=edge_z_undeformed_mag,
     mode='lines',
-    line=dict(color='lightblue', width=2, dash='dash'),
+    line=dict(color='cyan', width=4),
     hoverinfo='skip',
     name='Undeformed',
-    opacity=0.5
+    opacity=0.9
 ))
 
 # Add MAGNIFIED deformed elements
@@ -1665,7 +1665,7 @@ fig_magnified.add_trace(go.Scatter3d(
     y=points['Y'],
     z=points['Z'],
     mode='markers',
-    marker=dict(size=4, color='blue', opacity=0.5),
+    marker=dict(size=8, color='cyan', opacity=0.9),
     hoverinfo='skip',
     name='Undeformed Nodes'
 ))
