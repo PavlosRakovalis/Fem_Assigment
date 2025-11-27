@@ -181,10 +181,11 @@ points = pd.DataFrame({
 
 
 
-L = 1.5 * 1.13
-A = 1.2 * 1.69
-phi = 60 + 9.1 #degrees
-A_0 = 6 * (0.5 + 0.13 )
+L = 1.5 * 1.13  # Length in meters
+A = 1.2 * 1.69  # Distance in meters
+phi = 60 + 9.1  # degrees
+# A_0 = 6 * (0.5 + 0.13) cm² needs conversion to m²
+A_0 = 6 * (0.5 + 0.13) * 1e-4  # = 3.78 cm² = 3.78e-4 m²
 
 
 # Arhika estw oti to simeio 0 ,0,0 einai stin thesi opou pianei o geranos 
@@ -594,6 +595,19 @@ print(f"\nElement count by type:")
 print(f"  Straight: {num_straight}")
 print(f"  Diagonal: {num_diagonal}")
 print(f"  Unassigned: {num_unassigned}")
+
+# ⚠️ CRITICAL CHECK: Elements with NaN cross section will cause HUGE displacements!
+if num_unassigned > 0:
+    print(f"\n⚠️⚠️⚠️  CRITICAL ERROR: {num_unassigned} elements have NO cross section! ⚠️⚠️⚠️")
+    print(f"These elements will have infinite flexibility (A=NaN → K=NaN)")
+    print(f"\nElements with missing cross section:")
+    nan_elements = elements[elements['Element Cross Section'].isna()]
+    for idx in nan_elements.index[:10]:  # Show first 10
+        elem = elements.iloc[idx]
+        print(f"  Element {int(elem['Element Number'])}: Length = {elem['Element Length']:.4f} m, A = NaN")
+    if len(nan_elements) > 10:
+        print(f"  ... and {len(nan_elements) - 10} more")
+    print(f"\n⚠️  FIX: Assign cross sections to ALL elements before continuing! ⚠️")
 
 
 # Display the elements DataFrame in an interactive scrollable window (after adding all columns)
@@ -1224,6 +1238,15 @@ for element_idx in range(len(elements)):
     Y_j = node2['Y']
     Z_j = node2['Z']
 
+    # Debug first few elements to check stiffness values
+    if element_idx < 3:
+        k_factor = (A * E / l_e)
+        print(f"\n🔍 Element {element_idx+1} stiffness check:")
+        print(f"   E = {E:.2e} Pa")
+        print(f"   A = {A:.6e} m²")
+        print(f"   L = {l_e:.4f} m")
+        print(f"   k = (A*E/L) = {k_factor:.6e} N/m")
+
     # Calculate direction cosines
     l_y = (X_j - X_i) / l_e  # cos(x, X)
     m_y = (Y_j - Y_i) / l_e  # cos(x, Y)
@@ -1274,3 +1297,318 @@ print(f"  Non-zero elements: {np.count_nonzero(stiffness_matrix.values)}")
 
 
 
+
+
+
+####################SOLVE FEM SYSTEM FOR DISPLACEMENTS##########################
+
+print("\n" + "="*80)
+print("SOLVING FEM SYSTEM: K * u = F")
+print("="*80)
+
+# Step 1: Convert forces DataFrame to numpy vector
+F_global = forces['Value (Newton)'].fillna(0).to_numpy()
+print(f"\nStep 1: Force vector F created ({len(F_global)} DOFs)")
+
+# Step 2: Identify known (fixed) and unknown (free) DOFs
+known_dofs = []  # DOFs with prescribed displacement (u = 0)
+unknown_dofs = []  # DOFs to be solved
+
+for i in range(len(displacements)):
+    if pd.notna(displacements.loc[i, 'Value (m)']):
+        known_dofs.append(i)
+    else:
+        unknown_dofs.append(i)
+
+print(f"\nStep 2: DOF classification")
+print(f"  Known DOFs (fixed supports): {len(known_dofs)}")
+print(f"  Unknown DOFs (free): {len(unknown_dofs)}")
+
+# Step 3: Extract reduced stiffness matrix K_ff (free-free)
+K_full = stiffness_matrix.to_numpy()
+K_reduced = K_full[np.ix_(unknown_dofs, unknown_dofs)]
+F_reduced = F_global[unknown_dofs]
+
+print(f"\nStep 3: Reduced system extracted")
+print(f"  Reduced K size: {K_reduced.shape[0]} × {K_reduced.shape[1]}")
+print(f"  Condition number: {np.linalg.cond(K_reduced):.2e}")
+
+# Step 4: Solve reduced system K_reduced * u_unknown = F_reduced
+print(f"\nStep 4: Solving linear system...")
+try:
+    u_unknown = np.linalg.solve(K_reduced, F_reduced)
+    print(f"  ✓ System solved successfully")
+except np.linalg.LinAlgError as e:
+    print(f"  ✗ Error solving system: {e}")
+    print(f"  Matrix may be singular or ill-conditioned")
+    u_unknown = np.zeros(len(unknown_dofs))
+
+# Step 5: Reconstruct full displacement vector
+u_full = np.zeros(n_dof)
+u_full[known_dofs] = 0.0  # Known displacements (supports)
+u_full[unknown_dofs] = u_unknown  # Solved displacements
+
+# Update displacements DataFrame
+displacements['Value (m)'] = u_full
+
+print(f"\nStep 5: Full displacement vector reconstructed")
+print(f"  Total DOFs: {len(u_full)}")
+print(f"  Max displacement: {np.abs(u_full).max():.6e} m")
+print(f"  Max displacement (mm): {np.abs(u_full).max() * 1000:.6f} mm")
+
+# Display displacement results
+print("\n" + "="*80)
+print("DISPLACEMENT RESULTS")
+print("="*80)
+
+# Show displacements for each node
+for node_num in range(1, num_nodes + 1):
+    ux_idx = (node_num - 1) * 3 + 0
+    uy_idx = (node_num - 1) * 3 + 1
+    uz_idx = (node_num - 1) * 3 + 2
+    
+    ux = u_full[ux_idx]
+    uy = u_full[uy_idx]
+    uz = u_full[uz_idx]
+    
+    magnitude = np.sqrt(ux**2 + uy**2 + uz**2)
+    
+    # Only print nodes with significant displacement (> 1 μm)
+    if magnitude > 1e-6:
+        print(f"Node {node_num:2d}: Ux={ux*1000:8.4f} mm, Uy={uy*1000:8.4f} mm, Uz={uz*1000:8.4f} mm, |U|={magnitude*1000:8.4f} mm")
+
+# Display displacements DataFrame in interactive window
+display_matrix_table(displacements, "Solved Displacements")
+
+# Step 6: Calculate reaction forces at supports
+print("\n" + "="*80)
+print("REACTION FORCES AT SUPPORTS")
+print("="*80)
+
+reactions = K_full[known_dofs, :] @ u_full
+
+for i, dof_idx in enumerate(known_dofs):
+    node_num = dof_idx // 3 + 1
+    direction = ['x', 'y', 'z'][dof_idx % 3]
+    reaction = reactions[i]
+    print(f"Node {node_num} - F{direction}: {reaction:10.2f} N")
+
+# Sum of reactions (should balance applied forces)
+total_reaction = np.sum(reactions)
+total_applied_force = np.sum(F_global)
+print(f"\nForce balance check:")
+print(f"  Total applied force: {total_applied_force:.2f} N")
+print(f"  Total reaction force: {total_reaction:.2f} N")
+print(f"  Difference: {abs(total_applied_force + total_reaction):.2e} N")
+
+print("\n" + "="*80)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+####################Plot Undeformed and Deformed Structure Comparison##########################
+
+# Create interactive Plotly 3D plot comparing undeformed and deformed structures
+fig_deformed = go.Figure()
+
+# Calculate deformed node positions
+deformed_points = points.copy()
+for node_num in range(1, num_nodes + 1):
+    ux_idx = (node_num - 1) * 3 + 0
+    uy_idx = (node_num - 1) * 3 + 1
+    uz_idx = (node_num - 1) * 3 + 2
+    
+    # Get node index in points DataFrame
+    node_idx = node_num - 1
+    
+    # Add displacements to original coordinates
+    deformed_points.loc[node_idx, 'X'] = points.iloc[node_idx]['X'] + u_full[ux_idx]
+    deformed_points.loc[node_idx, 'Y'] = points.iloc[node_idx]['Y'] + u_full[uy_idx]
+    deformed_points.loc[node_idx, 'Z'] = points.iloc[node_idx]['Z'] + u_full[uz_idx]
+
+# Add undeformed elements (lines between nodes)
+edge_x_undeformed = []
+edge_y_undeformed = []
+edge_z_undeformed = []
+
+for idx in range(len(elements)):
+    node1_idx = int(elements.iloc[idx]['Node1']) - 1
+    node2_idx = int(elements.iloc[idx]['Node2']) - 1
+    
+    # Get coordinates
+    x1, y1, z1 = points.iloc[node1_idx][['X', 'Y', 'Z']]
+    x2, y2, z2 = points.iloc[node2_idx][['X', 'Y', 'Z']]
+    
+    edge_x_undeformed.extend([x1, x2, None])
+    edge_y_undeformed.extend([y1, y2, None])
+    edge_z_undeformed.extend([z1, z2, None])
+
+# Add undeformed elements as lines
+fig_deformed.add_trace(go.Scatter3d(
+    x=edge_x_undeformed,
+    y=edge_y_undeformed,
+    z=edge_z_undeformed,
+    mode='lines',
+    line=dict(color='blue', width=2),
+    hoverinfo='skip',
+    name='Undeformed Elements'
+))
+
+# Add deformed elements (lines between deformed nodes)
+edge_x_deformed = []
+edge_y_deformed = []
+edge_z_deformed = []
+
+for idx in range(len(elements)):
+    node1_idx = int(elements.iloc[idx]['Node1']) - 1
+    node2_idx = int(elements.iloc[idx]['Node2']) - 1
+    
+    # Get deformed coordinates
+    x1, y1, z1 = deformed_points.iloc[node1_idx][['X', 'Y', 'Z']]
+    x2, y2, z2 = deformed_points.iloc[node2_idx][['X', 'Y', 'Z']]
+    
+    edge_x_deformed.extend([x1, x2, None])
+    edge_y_deformed.extend([y1, y2, None])
+    edge_z_deformed.extend([z1, z2, None])
+
+# Add deformed elements as lines
+fig_deformed.add_trace(go.Scatter3d(
+    x=edge_x_deformed,
+    y=edge_y_deformed,
+    z=edge_z_deformed,
+    mode='lines',
+    line=dict(color='red', width=3),
+    hoverinfo='skip',
+    name='Deformed Elements'
+))
+
+# Add undeformed nodes
+fig_deformed.add_trace(go.Scatter3d(
+    x=points['X'],
+    y=points['Y'],
+    z=points['Z'],
+    mode='markers',
+    marker=dict(size=6, color='blue', opacity=0.6),
+    hovertemplate='<b>Undeformed Node %{text}</b><br>X: %{x:.6f} m<br>Y: %{y:.6f} m<br>Z: %{z:.6f} m<extra></extra>',
+    text=[f"{int(n)}" for n in points['Node Number']],
+    name='Undeformed Nodes'
+))
+
+# Add deformed nodes
+fig_deformed.add_trace(go.Scatter3d(
+    x=deformed_points['X'],
+    y=deformed_points['Y'],
+    z=deformed_points['Z'],
+    mode='markers',
+    marker=dict(size=8, color='red', opacity=0.9),
+    hovertemplate='<b>Deformed Node %{text}</b><br>X: %{x:.6f} m<br>Y: %{y:.6f} m<br>Z: %{z:.6f} m<extra></extra>',
+    text=[f"{int(n)}" for n in deformed_points['Node Number']],
+    name='Deformed Nodes'
+))
+
+# Set equal aspect ratio and layout
+fig_deformed.update_layout(
+    title=f'Deformed vs Undeformed Structure<br><sub>Max Displacement: {np.abs(u_full).max()*1000:.4f} mm</sub>',
+    scene=dict(
+        xaxis_title='X (m)',
+        yaxis_title='Y (m)',
+        zaxis_title='Z (m)',
+        aspectmode='data',
+        camera=dict(
+            eye=dict(x=1.5, y=1.5, z=1.5)
+        )
+    ),
+    width=1200,
+    height=900,
+    hovermode='closest',
+    showlegend=True
+)
+
+fig_deformed.show()
+
+print(f"\nDeformed structure visualization complete.")
+print(f"  Blue nodes: Original (undeformed) positions")
+print(f"  Red nodes: Deformed positions")
+print(f"  Green dashed lines: Displacement vectors")
+
+
+
+
+
+
+
+
+# Get node coordinates
+node1 = points[points['Node Number'] == node1_num].iloc[0]
+node2 = points[points['Node Number'] == node2_num].iloc[0]
+
+X_i = node1['X']
+Y_i = node1['Y']
+Z_i = node1['Z']
+
+X_j = node2['X']
+Y_j = node2['Y']
+Z_j = node2['Z']
+
+# ========== DEBUG: Check element length units ==========
+# Calculate ACTUAL element length from coordinates
+dx = X_j - X_i
+dy = Y_j - Y_i
+dz = Z_j - Z_i
+l_actual = np.sqrt(dx**2 + dy**2 + dz**2)
+
+# Get stored length from DataFrame
+l_e = elem['Element Length']
+
+# Compare stored vs actual length
+length_error = abs(l_actual - l_e)
+relative_error = length_error / l_actual if l_actual > 0 else 0
+
+if element_idx < 5 or relative_error > 0.01:  # Print first 5 elements or any with >1% error
+    print(f"\n🔍 Element {element_idx+1} (Nodes {node1_num}-{node2_num}):")
+    print(f"   Stored length (l_e): {l_e:.6f} m")
+    print(f"   Actual length:       {l_actual:.6f} m")
+    print(f"   Difference:          {length_error:.2e} m ({relative_error*100:.2f}%)")
+    print(f"   Coordinates: ({X_i:.3f}, {Y_i:.3f}, {Z_i:.3f}) → ({X_j:.3f}, {Y_j:.3f}, {Z_j:.3f})")
+
+# Use ACTUAL length for direction cosines (critical fix!)
+l_e_corrected = l_actual
+# =======================================================
+
+# Calculate direction cosines using CORRECTED length
+l_y = dx / l_e_corrected  # cos(x, X)
+m_y = dy / l_e_corrected  # cos(x, Y)
+n_y = dz / l_e_corrected  # cos(x, Z)
+
+# Verify direction cosines sum to 1 (sanity check)
+cos_sum = l_y**2 + m_y**2 + n_y**2
+if abs(cos_sum - 1.0) > 1e-6:
+    print(f"   ⚠️  WARNING: Direction cosines don't sum to 1.0: {cos_sum:.10f}")
+
+# Define the local stiffness matrix K_e for the element
+# Use l_e_corrected for stiffness calculation too!
+K_e = (A * E / l_e_corrected) * np.array([
+    [l_y**2,        l_y*m_y,      l_y*n_y,     -l_y**2,       -l_y*m_y,     -l_y*n_y    ],
+    [l_y*m_y,       m_y**2,       m_y*n_y,     -l_y*m_y,      -m_y**2,      -m_y*n_y    ],
+    [l_y*n_y,       m_y*n_y,      n_y**2,      -l_y*n_y,      -m_y*n_y,     -n_y**2     ],
+    [-l_y**2,       -l_y*m_y,     -l_y*n_y,     l_y**2,        l_y*m_y,      l_y*n_y    ],
+    [-l_y*m_y,      -m_y**2,      -m_y*n_y,     l_y*m_y,       m_y**2,       m_y*n_y    ],
+    [-l_y*n_y,      -m_y*n_y,     -n_y**2,      l_y*n_y,       m_y*n_y,      n_y**2     ]
+])
