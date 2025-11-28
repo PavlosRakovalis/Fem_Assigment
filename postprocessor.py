@@ -4,7 +4,7 @@ FEM Post-Processor Module
 This module reads FEM results from a .res file and creates visualizations
 of the deformed structure, stresses, and other results.
 
-Author: Copilot
+Author: Rakovalis Pavlos 6931
 Date: November 2025
 """
 
@@ -167,13 +167,13 @@ class FEMPostProcessor:
         print(f"  - {len(self.element_forces)} element results")
         
     def plot_deformed_structure(self, magnification=1.0, show_plot=True):
-        """Plot undeformed and deformed structure"""
-        print("\nCREATING DEFORMATION PLOT")
+        """Plot undeformed and deformed structure with interactive magnification slider"""
+        print("\nCREATING DEFORMATION PLOT WITH INTERACTIVE SLIDER")
         print("="*80)
         
         fig = go.Figure()
         
-        # Undeformed structure
+        # Undeformed structure (always shown)
         edge_x_undef, edge_y_undef, edge_z_undef = [], [], []
         for idx in range(len(self.elements)):
             node1_num = int(self.elements.iloc[idx]['Node1'])
@@ -189,37 +189,10 @@ class FEMPostProcessor:
         fig.add_trace(go.Scatter3d(
             x=edge_x_undef, y=edge_y_undef, z=edge_z_undef,
             mode='lines',
-            line=dict(color='blue', width=2),
-            name='Undeformed'
-        ))
-        
-        # Deformed structure
-        deformed_nodes = self.nodes.copy()
-        for idx in range(len(self.nodes)):
-            node_num = int(self.nodes.iloc[idx]['Node Number'])
-            disp = self.displacements[self.displacements['Node Number'] == node_num].iloc[0]
-            
-            deformed_nodes.loc[idx, 'X'] += disp['Ux'] * magnification
-            deformed_nodes.loc[idx, 'Y'] += disp['Uy'] * magnification
-            deformed_nodes.loc[idx, 'Z'] += disp['Uz'] * magnification
-        
-        edge_x_def, edge_y_def, edge_z_def = [], [], []
-        for idx in range(len(self.elements)):
-            node1_num = int(self.elements.iloc[idx]['Node1'])
-            node2_num = int(self.elements.iloc[idx]['Node2'])
-            
-            node1 = deformed_nodes[deformed_nodes['Node Number'] == node1_num].iloc[0]
-            node2 = deformed_nodes[deformed_nodes['Node Number'] == node2_num].iloc[0]
-            
-            edge_x_def.extend([node1['X'], node2['X'], None])
-            edge_y_def.extend([node1['Y'], node2['Y'], None])
-            edge_z_def.extend([node1['Z'], node2['Z'], None])
-        
-        fig.add_trace(go.Scatter3d(
-            x=edge_x_def, y=edge_y_def, z=edge_z_def,
-            mode='lines',
-            line=dict(color='red', width=3),
-            name='Deformed'
+            line=dict(color='cyan', width=4),
+            name='Undeformed',
+            visible=True,
+            opacity=0.9
         ))
         
         # Undeformed nodes
@@ -228,25 +201,95 @@ class FEMPostProcessor:
             y=self.nodes['Y'],
             z=self.nodes['Z'],
             mode='markers',
-            marker=dict(size=6, color='blue', opacity=0.6),
-            name='Undeformed Nodes'
+            marker=dict(size=8, color='cyan', opacity=0.9),
+            name='Undeformed Nodes',
+            visible=True
         ))
         
-        # Deformed nodes
-        fig.add_trace(go.Scatter3d(
-            x=deformed_nodes['X'],
-            y=deformed_nodes['Y'],
-            z=deformed_nodes['Z'],
-            mode='markers',
-            marker=dict(size=6, color='red', opacity=0.9),
-            name='Deformed Nodes'
-        ))
+        # Create deformed structures for different magnifications
+        magnifications = [1, 10, 50, 100, 500, 1000, 2000, 5000]
+        
+        for mag in magnifications:
+            # Deformed structure
+            deformed_nodes = self.nodes.copy()
+            for idx in range(len(self.nodes)):
+                node_num = int(self.nodes.iloc[idx]['Node Number'])
+                disp = self.displacements[self.displacements['Node Number'] == node_num].iloc[0]
+                
+                deformed_nodes.loc[idx, 'X'] += disp['Ux'] * mag
+                deformed_nodes.loc[idx, 'Y'] += disp['Uy'] * mag
+                deformed_nodes.loc[idx, 'Z'] += disp['Uz'] * mag
+            
+            edge_x_def, edge_y_def, edge_z_def = [], [], []
+            for idx in range(len(self.elements)):
+                node1_num = int(self.elements.iloc[idx]['Node1'])
+                node2_num = int(self.elements.iloc[idx]['Node2'])
+                
+                node1 = deformed_nodes[deformed_nodes['Node Number'] == node1_num].iloc[0]
+                node2 = deformed_nodes[deformed_nodes['Node Number'] == node2_num].iloc[0]
+                
+                edge_x_def.extend([node1['X'], node2['X'], None])
+                edge_y_def.extend([node1['Y'], node2['Y'], None])
+                edge_z_def.extend([node1['Z'], node2['Z'], None])
+            
+            # Add deformed elements trace (initially only first one visible)
+            fig.add_trace(go.Scatter3d(
+                x=edge_x_def, y=edge_y_def, z=edge_z_def,
+                mode='lines',
+                line=dict(color='red', width=4),
+                name=f'Deformed ({mag}x)',
+                visible=(mag == magnifications[0])  # Only first one visible initially
+            ))
+            
+            # Add deformed nodes trace
+            fig.add_trace(go.Scatter3d(
+                x=deformed_nodes['X'],
+                y=deformed_nodes['Y'],
+                z=deformed_nodes['Z'],
+                mode='markers',
+                marker=dict(size=8, color='red', opacity=0.9),
+                name=f'Deformed Nodes ({mag}x)',
+                visible=(mag == magnifications[0])  # Only first one visible initially
+            ))
+        
+        # Create slider steps
+        steps = []
+        for i, mag in enumerate(magnifications):
+            step = dict(
+                method="update",
+                args=[
+                    {"visible": [True, True] + [False] * (len(magnifications) * 2)},  # Start with undeformed visible
+                    {"title": f"Deformed Structure (Magnification: {mag}x)<br><sub>Max Displacement: {self.summary.get('Max_Displacement', 0)*1000:.4f} mm</sub>"}
+                ],
+                label=f"{mag}x"
+            )
+            # Make the corresponding deformed traces visible
+            step["args"][0]["visible"][2 + i * 2] = True  # Deformed elements
+            step["args"][0]["visible"][2 + i * 2 + 1] = True  # Deformed nodes
+            steps.append(step)
+        
+        sliders = [dict(
+            active=0,
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01,
+            currentvalue=dict(
+                prefix="Magnification: ",
+                visible=True,
+                xanchor="left"
+            ),
+            pad=dict(b=10, t=50),
+            len=0.9,
+            steps=steps
+        )]
         
         max_disp = self.summary.get('Max_Displacement', 0)
-        title = f'Deformed Structure (Mag: {magnification}x)<br>'
-        title += f'<sub>Max Displacement: {max_disp*1000:.4f} mm</sub>'
+        title = f'Interactive Deformed Structure (Magnification: {magnifications[0]}x)<br>'
+        title += f'<sub>Max Displacement: {max_disp*1000:.4f} mm - Use slider to adjust magnification</sub>'
         
         fig.update_layout(
+            sliders=sliders,
             title=title,
             scene=dict(
                 xaxis_title='X (m)',
@@ -261,9 +304,10 @@ class FEMPostProcessor:
         if show_plot:
             fig.show()
         
-        filename = f'deformed_structure_mag{magnification}.html'
+        filename = f'deformed_structure_interactive.html'
         fig.write_html(filename)
-        print(f"✓ Deformation plot saved to: {filename}")
+        print(f"✓ Interactive deformation plot saved to: {filename}")
+        print(f"  → Use the slider to adjust magnification from {magnifications[0]}x to {magnifications[-1]}x")
         
         return fig
     
@@ -468,6 +512,119 @@ class FEMPostProcessor:
         
         return fig
     
+    def plot_displacement_distribution(self, show_plot=True):
+        """Plot displacement distribution with colorbar"""
+        print("\nCREATING DISPLACEMENT DISTRIBUTION PLOT")
+        print("="*80)
+        
+        fig = go.Figure()
+        
+        # Calculate displacement magnitude for each node
+        node_displacements = []
+        for idx in range(len(self.nodes)):
+            node_num = int(self.nodes.iloc[idx]['Node Number'])
+            disp = self.displacements[self.displacements['Node Number'] == node_num].iloc[0]
+            node_displacements.append(disp['Magnitude'])
+        
+        max_displacement = max(node_displacements)
+        
+        # Collect all element line segments with their average displacement
+        edge_x, edge_y, edge_z = [], [], []
+        edge_displacements = []
+        
+        for idx in range(len(self.elements)):
+            elem = self.elements.iloc[idx]
+            node1_num = int(elem['Node1'])
+            node2_num = int(elem['Node2'])
+            
+            node1 = self.nodes[self.nodes['Node Number'] == node1_num].iloc[0]
+            node2 = self.nodes[self.nodes['Node Number'] == node2_num].iloc[0]
+            
+            # Get displacements for both nodes
+            disp1 = self.displacements[self.displacements['Node Number'] == node1_num].iloc[0]
+            disp2 = self.displacements[self.displacements['Node Number'] == node2_num].iloc[0]
+            
+            # Average displacement magnitude for the element
+            avg_displacement = (disp1['Magnitude'] + disp2['Magnitude']) / 2
+            
+            # Add line segment (use None to separate lines)
+            edge_x.extend([node1['X'], node2['X'], None])
+            edge_y.extend([node1['Y'], node2['Y'], None])
+            edge_z.extend([node1['Z'], node2['Z'], None])
+            # Repeat displacement value for both endpoints and None
+            edge_displacements.extend([avg_displacement, avg_displacement, avg_displacement])
+        
+        # Plot all elements with colorbar
+        fig.add_trace(go.Scatter3d(
+            x=edge_x,
+            y=edge_y,
+            z=edge_z,
+            mode='lines',
+            line=dict(
+                color=edge_displacements,
+                width=8,
+                colorscale='Viridis',  # Purple to Yellow colorscale
+                cmin=0,
+                cmax=max_displacement,
+                colorbar=dict(
+                    title=dict(
+                        text="Displacement (m)",
+                        side="right"
+                    ),
+                    thickness=20,
+                    len=0.7,
+                    tickformat=".2e",
+                    x=1.02
+                )
+            ),
+            showlegend=False,
+            hovertemplate='Displacement: %{line.color:.2e} m<extra></extra>'
+        ))
+        
+        # Add nodes with displacement magnitude
+        fig.add_trace(go.Scatter3d(
+            x=self.nodes['X'],
+            y=self.nodes['Y'],
+            z=self.nodes['Z'],
+            mode='markers',
+            marker=dict(
+                size=6,
+                color=node_displacements,
+                colorscale='Viridis',
+                cmin=0,
+                cmax=max_displacement,
+                showscale=False
+            ),
+            text=[f"Node {int(n)}" for n in self.nodes['Node Number']],
+            name='Nodes',
+            showlegend=True,
+            hovertemplate='<b>%{text}</b><br>Displacement: %{marker.color:.2e} m<extra></extra>'
+        ))
+        
+        title = f'Displacement Distribution<br>'
+        title += f'<sub>Max Displacement: {max_displacement*1000:.4f} mm</sub>'
+        
+        fig.update_layout(
+            title=title,
+            scene=dict(
+                xaxis_title='X (m)',
+                yaxis_title='Y (m)',
+                zaxis_title='Z (m)',
+                aspectmode='data'
+            ),
+            width=1200,
+            height=900
+        )
+        
+        if show_plot:
+            fig.show()
+        
+        filename = 'displacement_distribution.html'
+        fig.write_html(filename)
+        print(f"✓ Displacement distribution plot saved to: {filename}")
+        
+        return fig
+    
     def print_summary(self):
         """Print summary of results"""
         print("\n" + "="*80)
@@ -511,14 +668,16 @@ def main():
     # Create visualizations
     postprocessor.plot_deformed_structure(magnification=1.0, show_plot=True)
     postprocessor.plot_magnified_deformation(magnification=1000, show_plot=True)
+    postprocessor.plot_displacement_distribution(show_plot=True)
     postprocessor.plot_stress_distribution(show_plot=True)
     
     print("\n" + "="*80)
     print("POST-PROCESSOR COMPLETED SUCCESSFULLY")
     print("="*80 + "\n")
     print("Visualization files created:")
-    print("  - deformed_structure_mag1.0.html")
+    print("  - deformed_structure_interactive.html (with magnification slider)")
     print("  - magnified_deformation.html")
+    print("  - displacement_distribution.html")
     print("  - stress_distribution.html")
 
 

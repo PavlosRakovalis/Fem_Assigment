@@ -4,7 +4,7 @@ FEM Pre-Processor Module
 This module handles geometry creation, boundary conditions definition,
 and exports the structure data to a text file for the solver.
 
-Author: Copilot
+Author: Rakovalis Pavlos 6931
 Date: November 2025
 """
 

@@ -4,7 +4,7 @@ FEM Solver Module
 This module reads the structure data from a .dat file, assembles the global
 stiffness matrix, solves the FEM system, and exports results to a .res file.
 
-Author: Copilot
+Author: Rakovalis Pavlos 6931
 Date: November 2025
 """
 
