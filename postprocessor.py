@@ -304,7 +304,8 @@ class FEMPostProcessor:
         if show_plot:
             fig.show()
         
-        filename = f'deformed_structure_interactive.html'
+        filename = 'plots/deformed_structure_interactive.html'
+        os.makedirs('plots', exist_ok=True)
         fig.write_html(filename)
         print(f"✓ Interactive deformation plot saved to: {filename}")
         print(f"  → Use the slider to adjust magnification from {magnifications[0]}x to {magnifications[-1]}x")
@@ -412,7 +413,8 @@ class FEMPostProcessor:
         if show_plot:
             fig.show()
         
-        filename = 'magnified_deformation.html'
+        filename = 'plots/magnified_deformation.html'
+        os.makedirs('plots', exist_ok=True)
         fig.write_html(filename)
         print(f"✓ Magnified deformation plot saved to: {filename}")
         
@@ -506,7 +508,8 @@ class FEMPostProcessor:
         if show_plot:
             fig.show()
         
-        filename = 'stress_distribution.html'
+        filename = 'plots/stress_distribution.html'
+        os.makedirs('plots', exist_ok=True)
         fig.write_html(filename)
         print(f"✓ Stress distribution plot saved to: {filename}")
         
@@ -619,7 +622,8 @@ class FEMPostProcessor:
         if show_plot:
             fig.show()
         
-        filename = 'displacement_distribution.html'
+        filename = 'plots/displacement_distribution.html'
+        os.makedirs('plots', exist_ok=True)
         fig.write_html(filename)
         print(f"✓ Displacement distribution plot saved to: {filename}")
         
@@ -674,11 +678,11 @@ def main():
     print("\n" + "="*80)
     print("POST-PROCESSOR COMPLETED SUCCESSFULLY")
     print("="*80 + "\n")
-    print("Visualization files created:")
-    print("  - deformed_structure_interactive.html (with magnification slider)")
-    print("  - magnified_deformation.html")
-    print("  - displacement_distribution.html")
-    print("  - stress_distribution.html")
+    print("Visualization files created in plots/ folder:")
+    print("  - plots/deformed_structure_interactive.html (with magnification slider)")
+    print("  - plots/magnified_deformation.html")
+    print("  - plots/displacement_distribution.html")
+    print("  - plots/stress_distribution.html")
 
 
 if __name__ == "__main__":
