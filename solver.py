@@ -52,10 +52,8 @@ class FEMSolver:
                 continue
             
             # Check for section headers
-            if line == 'PARAMETERS':
-                current_section = 'PARAMETERS'
-                continue
-            elif line == 'MATERIALS':
+            # NOTE: PARAMETERS section removed - now defined in preprocessor only
+            if line == 'MATERIALS':
                 current_section = 'MATERIALS'
                 continue
             elif line == 'NODES':
@@ -76,12 +74,8 @@ class FEMSolver:
                 break
             
             # Parse data based on current section
-            if current_section == 'PARAMETERS':
-                parts = line.split()
-                if len(parts) == 2:
-                    self.parameters[parts[0]] = float(parts[1])
-                    
-            elif current_section == 'MATERIALS':
+            # NOTE: PARAMETERS section removed - no longer parsed
+            if current_section == 'MATERIALS':
                 parts = line.split()
                 if len(parts) == 3:
                     mat_name = parts[0]

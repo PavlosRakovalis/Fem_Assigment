@@ -30,17 +30,54 @@ class FEMPreProcessor:
         self.loads = {}  # node_id: {'Fx': value, 'Fy': value, 'Fz': value}
         self.materials = {'STEEL': {'E': 210e9, 'nu': 0.3}}
         
-        # Geometry parameters
-        self.L = 1.5 * 1.13
-        self.A = 1.2 * 1.69
-        self.phi = 60 + 9.1
-        self.A_0 = 6 * (0.5 + 0.13)
+        
+    ################################################################################
+    #                                                                              #
+    #                        GEOMETRY DEFINITION SECTION                           #
+    #                                                                              #
+    #  This section defines the geometry, materials, and parameters for the        #
+    #  specific structure being analyzed.                                          #
+    #                                                                              #
+    #  HOW TO DEFINE YOUR STRUCTURE:                                               #
+    #  -----------------------------                                               #
+    #  1. PARAMETERS: Define geometric parameters (L, A, phi, A_0, etc.)          #
+    #     These are specific to this problem and won't be saved to .dat file      #
+    #                                                                              #
+    #  2. NODES: Use self._add_node(x, y, z) to add nodes                         #
+    #     - Nodes are automatically numbered sequentially                          #
+    #     - Coordinates are in meters                                              #
+    #                                                                              #
+    #  3. ELEMENTS: Elements are created automatically based on connectivity       #
+    #     - Axis-aligned elements (parallel to X, Y, or Z)                         #
+    #     - Diagonal bracing (coplanar diagonals)                                  #
+    #     - Manual connections can be added later                                  #
+    #                                                                              #
+    #  4. BOUNDARY CONDITIONS: Use self.add_boundary_condition(node_id, ux, uy, uz)#
+    #     - node_id: Node number (1-based)                                         #
+    #     - ux, uy, uz: 1=fixed, 0=free                                            #
+    #                                                                              #
+    #  5. LOADS: Use self.add_load(node_id, fx, fy, fz)                           #
+    #     - node_id: Node number (1-based)                                         #
+    #     - fx, fy, fz: Force components in Newtons                                #
+    #                                                                              #
+    ################################################################################
+    
+    def _define_geometry_parameters(self):
+        """Define geometry-specific parameters (not saved to .dat file)"""
+        # Geometry parameters for this specific crane/truss structure
+        self.L = 1.5 * 1.13      # Element length (m)
+        self.A = 1.2 * 1.69      # Base dimension (m)
+        self.phi = 60 + 9.1      # Rotation angle (degrees)
+        self.A_0 = 6 * (0.5 + 0.13)  # Base cross-section parameter (dimensionless)
         
     def create_geometry(self):
         """Create the truss geometry"""
         print("="*80)
         print("CREATING GEOMETRY")
         print("="*80)
+        
+        # Define geometry parameters first
+        self._define_geometry_parameters()
         
         # Add initial nodes (WITHOUT rotation)
         self._add_initial_nodes()
@@ -261,6 +298,14 @@ class FEMPreProcessor:
         self.elements['Element Length'] = element_lengths
         self.elements['Element Cross Section'] = cross_sections
         
+    
+    ################################################################################
+    #                                                                              #
+    #                     END OF GEOMETRY DEFINITION SECTION                       #
+    #                                                                              #
+    ################################################################################
+    
+    
     def add_boundary_condition(self, node_id, ux=0, uy=0, uz=0):
         """Add boundary condition (0=free, 1=fixed)"""
         self.boundary_conditions[node_id] = {'Ux': ux, 'Uy': uy, 'Uz': uz}
@@ -432,9 +477,10 @@ class FEMPreProcessor:
         if show_plot:
             fig.show()
         
-        # Save HTML
-        fig.write_html('geometry_visualization.html')
-        print(f"✓ Geometry visualization saved to: geometry_visualization.html")
+        # Save HTML to plots folder
+        os.makedirs('plots', exist_ok=True)
+        fig.write_html('plots/geometry_visualization.html')
+        print(f"✓ Geometry visualization saved to: plots/geometry_visualization.html")
         
         return fig
     
@@ -452,13 +498,8 @@ class FEMPreProcessor:
             f.write(f"# Generated by FEM Pre-Processor\n")
             f.write(f"# Date: {pd.Timestamp.now()}\n\n")
             
-            # Parameters
-            f.write("PARAMETERS\n")
-            f.write(f"L {self.L:.6f}\n")
-            f.write(f"A {self.A:.6f}\n")
-            f.write(f"phi {self.phi:.6f}\n")
-            f.write(f"A_0 {self.A_0:.6f}\n")
-            f.write("\n")
+            # NOTE: Geometry parameters (L, A, phi, A_0) are NOT exported
+            # They are defined in _define_geometry_parameters() and specific to this problem
             
             # Materials
             f.write("MATERIALS\n")

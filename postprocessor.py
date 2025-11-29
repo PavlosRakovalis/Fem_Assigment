@@ -629,6 +629,101 @@ class FEMPostProcessor:
         
         return fig
     
+    def plot_strain_distribution(self, show_plot=True):
+        """Plot strain distribution in elements"""
+        print("\nCREATING STRAIN DISTRIBUTION PLOT")
+        print("="*80)
+        
+        fig = go.Figure()
+        
+        # Get strain values
+        strains = self.element_forces['Strain'].values
+        max_strain = np.abs(strains).max()
+        
+        # Collect all element line segments with their strains
+        edge_x, edge_y, edge_z = [], [], []
+        edge_strains = []
+        
+        for idx in range(len(self.elements)):
+            elem = self.elements.iloc[idx]
+            node1_num = int(elem['Node1'])
+            node2_num = int(elem['Node2'])
+            
+            node1 = self.nodes[self.nodes['Node Number'] == node1_num].iloc[0]
+            node2 = self.nodes[self.nodes['Node Number'] == node2_num].iloc[0]
+            
+            strain = self.element_forces.iloc[idx]['Strain']
+            
+            # Add line segment (use None to separate lines)
+            edge_x.extend([node1['X'], node2['X'], None])
+            edge_y.extend([node1['Y'], node2['Y'], None])
+            edge_z.extend([node1['Z'], node2['Z'], None])
+            # Repeat strain value for both endpoints and None
+            edge_strains.extend([strain, strain, strain])
+        
+        # Plot all elements with colorbar
+        fig.add_trace(go.Scatter3d(
+            x=edge_x,
+            y=edge_y,
+            z=edge_z,
+            mode='lines',
+            line=dict(
+                color=edge_strains,
+                width=8,
+                colorscale='RdBu',  # Red=negative (compression), Blue=positive (tension)
+                cmin=-max_strain,
+                cmax=max_strain,
+                colorbar=dict(
+                    title=dict(
+                        text="Strain (ε)",
+                        side="right"
+                    ),
+                    thickness=20,
+                    len=0.7,
+                    tickformat=".2e",
+                    x=1.02
+                )
+            ),
+            showlegend=False,
+            hovertemplate='Strain: %{line.color:.2e}<extra></extra>'
+        ))
+        
+        # Add nodes
+        fig.add_trace(go.Scatter3d(
+            x=self.nodes['X'],
+            y=self.nodes['Y'],
+            z=self.nodes['Z'],
+            mode='markers',
+            marker=dict(size=4, color='black'),
+            name='Nodes',
+            showlegend=True
+        ))
+        
+        title = f'Element Strain Distribution<br>'
+        title += f'<sub>Max Strain: {max_strain:.2e} (Blue=Tension, Red=Compression)</sub>'
+        
+        fig.update_layout(
+            title=title,
+            scene=dict(
+                xaxis_title='X (m)',
+                yaxis_title='Y (m)',
+                zaxis_title='Z (m)',
+                aspectmode='data'
+            ),
+            width=1200,
+            height=900
+        )
+        
+        if show_plot:
+            fig.show()
+        
+        filename = 'plots/strain_distribution.html'
+        os.makedirs('plots', exist_ok=True)
+        fig.write_html(filename)
+        print(f"✓ Strain distribution plot saved to: {filename}")
+        
+        return fig
+    
     def print_summary(self):
         """Print summary of results"""
         print("\n" + "="*80)
@@ -674,6 +769,7 @@ def main():
     postprocessor.plot_magnified_deformation(magnification=1000, show_plot=True)
     postprocessor.plot_displacement_distribution(show_plot=True)
     postprocessor.plot_stress_distribution(show_plot=True)
+    postprocessor.plot_strain_distribution(show_plot=True)
     
     print("\n" + "="*80)
     print("POST-PROCESSOR COMPLETED SUCCESSFULLY")
@@ -683,6 +779,7 @@ def main():
     print("  - plots/magnified_deformation.html")
     print("  - plots/displacement_distribution.html")
     print("  - plots/stress_distribution.html")
+    print("  - plots/strain_distribution.html")
 
 
 if __name__ == "__main__":
