@@ -126,9 +126,12 @@ def display_matrix_table(df, title="Stiffness Matrix"):
         if df.shape[0] > 10 or df.shape[1] > 10:
             print(f"\n... (showing first 10×10 subset of {df.shape[0]}×{df.shape[1]} matrix)")
         
-        # Save full HTML for viewing/download
+        # Save full HTML for viewing/download in organized folder
+        output_dir = os.path.join(os.getcwd(), "output_html")
+        os.makedirs(output_dir, exist_ok=True)  # Create folder if it doesn't exist
+        
         html_filename = f"{title.replace(' ', '_')}.html"
-        html_path = os.path.join(os.getcwd(), html_filename)
+        html_path = os.path.join(output_dir, html_filename)
         try:
             df.to_html(html_path, index=True)
             print(f"\n✓ Full matrix saved to: {html_path}")
