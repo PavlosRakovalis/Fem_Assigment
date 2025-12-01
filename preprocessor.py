@@ -64,15 +64,15 @@ class FEMPreProcessor:
     
     def _define_geometry_parameters(self):
         """Define geometry-specific parameters (not saved to .dat file)"""
-        # NEW SIMPLE GEOMETRY: 3-node triangular truss
-        self.cross_section = 4e-4  # 4 cm² = 4×10⁻⁴ m²
+        # SIMPLE GEOMETRY (COMMENTED OUT)
+        # self.cross_section = 4e-4  # 4 cm² = 4×10⁻⁴ m²
         
-        # OLD COMPLEX GEOMETRY (COMMENTED OUT)
-        # # Geometry parameters for this specific crane/truss structure
-        # self.L = 1.5 * 1.13      # Element length (m)
-        # self.A = 1.2 * 1.69      # Base dimension (m)
-        # self.phi = 60 + 9.1      # Rotation angle (degrees)
-        # self.A_0 = 6 * (0.5 + 0.13)  # Base cross-section parameter (dimensionless)
+        # COMPLEX GEOMETRY: Original crane/truss structure
+        # Geometry parameters for this specific crane/truss structure
+        self.L = 1.5 * 1.13      # Element length (m)
+        self.A = 1.2 * 1.69      # Base dimension (m)
+        self.phi = 60 + 9.1      # Rotation angle (degrees)
+        self.A_0 = 6 * (0.5 + 0.13)  # Base cross-section parameter (dimensionless)
         
     def create_geometry(self):
         """Create the truss geometry"""
@@ -90,46 +90,46 @@ class FEMPreProcessor:
         
     def _add_initial_nodes(self):
         """Add all nodes to the structure"""
-        # NEW SIMPLE GEOMETRY: 4 nodes forming a tetrahedron (3D pyramid)
-        # Node 1: Origin (0, 0, 0) - Fixed
-        self._add_node(0.0, 0.0, 0.0)
+        # SIMPLE GEOMETRY (COMMENTED OUT)
+        # # Node 1: Origin (0, 0, 0) - Fixed
+        # self._add_node(0.0, 0.0, 0.0)
+        # 
+        # # Node 2: Along X-axis (1, 0, 0) - Fixed
+        # self._add_node(1.0, 0.0, 0.0)
+        # 
+        # # Node 3: Along Y-axis (0, 3, 0) - Loaded with 1000 N in +X direction
+        # self._add_node(0.0, 3.0, 0.0)
+        # 
+        # # Node 4: Along Z-axis (0, 0, 1) - Free
+        # self._add_node(0.0, 0.0, 1.0)
         
-        # Node 2: Along X-axis (1, 0, 0) - Fixed
-        self._add_node(1.0, 0.0, 0.0)
+        # COMPLEX GEOMETRY: Original crane structure
+        L, A = self.L, self.A
         
-        # Node 3: Along Y-axis (0, 3, 0) - Loaded with 1000 N in +X direction
-        self._add_node(0.0, 3.0, 0.0)
+        # Node 1: x = A, y = -L/2, z = 0
+        self._add_node(A, -L/2, 0.0)
         
-        # Node 4: Along Z-axis (0, 0, 1) - Free
-        self._add_node(0.0, 0.0, 1.0)
+        # Node 2: x = A, y = +L/2, z = 0
+        self._add_node(A, L/2, 0.0)
         
-        # OLD COMPLEX GEOMETRY (COMMENTED OUT)
-        # L, A = self.L, self.A
-        # 
-        # # Node 1: x = A, y = -L/2, z = 0
-        # self._add_node(A, -L/2, 0.0)
-        # 
-        # # Node 2: x = A, y = +L/2, z = 0
-        # self._add_node(A, L/2, 0.0)
-        # 
-        # # Nodes 3-9: z = -L/2, y = -L/2
-        # for i in range(7):
-        #     self._add_node(A + L + i * L, -L/2, -L/2)
-        # 
-        # # Nodes 10-16: z = -L/2, y = L/2
-        # for i in range(7):
-        #     self._add_node(A + L + i * L, L/2, -L/2)
-        # 
-        # # Nodes 17-22: z = +L/2, y = -L/2
-        # for i in range(6):
-        #     self._add_node(A + L + i * L, -L/2, L/2)
-        # 
-        # # Nodes 23-28: z = L/2, y = L/2
-        # for i in range(6):
-        #     self._add_node(A + L + i * L, L/2, L/2)
-        # 
-        # # Node 29: Load application point
-        # self._add_node(A + L * 6.5, 0, -1.5 * L)
+        # Nodes 3-9: z = -L/2, y = -L/2
+        for i in range(7):
+            self._add_node(A + L + i * L, -L/2, -L/2)
+        
+        # Nodes 10-16: z = -L/2, y = L/2
+        for i in range(7):
+            self._add_node(A + L + i * L, L/2, -L/2)
+        
+        # Nodes 17-22: z = +L/2, y = -L/2
+        for i in range(6):
+            self._add_node(A + L + i * L, -L/2, L/2)
+        
+        # Nodes 23-28: z = L/2, y = L/2
+        for i in range(6):
+            self._add_node(A + L + i * L, L/2, L/2)
+        
+        # Node 29: Load application point
+        self._add_node(A + L * 6.5, 0, -1.5 * L)
         
     def _add_node(self, x, y, z):
         """Add a single node"""
@@ -146,52 +146,55 @@ class FEMPreProcessor:
         print("\nCREATING ELEMENTS")
         print("="*80)
         
-        # NEW SIMPLE GEOMETRY: 6 elements forming a tetrahedron (3D pyramid)
-        # Base triangle (on XY plane, z=0)
-        # Element 1: Node 1 → Node 2 (base edge, along X-axis)
-        self._add_element(1, 1, 2)
+        # SIMPLE GEOMETRY (COMMENTED OUT)
+        # # Base triangle (on XY plane, z=0)
+        # # Element 1: Node 1 → Node 2 (base edge, along X-axis)
+        # self._add_element(1, 1, 2)
+        # 
+        # # Element 2: Node 2 → Node 3 (base edge)
+        # self._add_element(2, 2, 3)
+        # 
+        # # Element 3: Node 3 → Node 1 (base edge)
+        # self._add_element(3, 3, 1)
+        # 
+        # # Pyramid edges (connecting apex node 4 to base)
+        # # Element 4: Node 4 → Node 1 (vertical edge from origin)
+        # self._add_element(4, 4, 1)
+        # 
+        # # Element 5: Node 4 → Node 2 (pyramid edge)
+        # self._add_element(5, 4, 2)
+        # 
+        # # Element 6: Node 4 → Node 3 (pyramid edge)
+        # self._add_element(6, 4, 3)
+        # 
+        # # Calculate element lengths and assign cross sections
+        # self._calculate_element_properties()
         
-        # Element 2: Node 2 → Node 3 (base edge)
-        self._add_element(2, 2, 3)
+        # COMPLEX GEOMETRY: Original crane structure
+        element_counter = 1
+        tolerance = 1e-6
+        max_element_length = 1.55 * self.L
         
-        # Element 3: Node 3 → Node 1 (base edge)
-        self._add_element(3, 3, 1)
+        # Create axis-aligned elements
+        element_counter = self._create_axis_aligned_elements(element_counter, tolerance, max_element_length)
+        print(f"  After axis-aligned: {len(self.elements)} elements")
         
-        # Pyramid edges (connecting apex node 4 to base)
-        # Element 4: Node 4 → Node 1 (vertical edge from origin)
-        self._add_element(4, 4, 1)
+        # Add diagonal bracing
+        element_counter = self._add_diagonal_bracing(element_counter, tolerance, max_element_length)
+        print(f"  After diagonal bracing: {len(self.elements)} elements")
         
-        # Element 5: Node 4 → Node 2 (pyramid edge)
-        self._add_element(5, 4, 2)
+        # Add connections from Node 29
+        element_counter = self._add_node29_connections(element_counter)
+        print(f"  After Node 29 connections: {len(self.elements)} elements")
         
-        # Element 6: Node 4 → Node 3 (pyramid edge)
-        self._add_element(6, 4, 3)
+        # Add specific connections
+        element_counter = self._add_specific_connections(element_counter)
+        print(f"  After specific connections: {len(self.elements)} elements")
         
         # Calculate element lengths and assign cross sections
         self._calculate_element_properties()
         
         print(f"✓ Created {len(self.elements)} elements")
-        
-        # OLD COMPLEX GEOMETRY (COMMENTED OUT)
-        # element_counter = 1
-        # tolerance = 1e-6
-        # max_element_length = 1.55 * self.L
-        # 
-        # # Create axis-aligned elements
-        # element_counter = self._create_axis_aligned_elements(element_counter, tolerance, max_element_length)
-        # print(f"  After axis-aligned: {len(self.elements)} elements")
-        # 
-        # # Add diagonal bracing
-        # element_counter = self._add_diagonal_bracing(element_counter, tolerance, max_element_length)
-        # print(f"  After diagonal bracing: {len(self.elements)} elements")
-        # 
-        # # Add connections from Node 29
-        # element_counter = self._add_node29_connections(element_counter)
-        # print(f"  After Node 29 connections: {len(self.elements)} elements")
-        # 
-        # # Add specific connections
-        # element_counter = self._add_specific_connections(element_counter)
-        # print(f"  After specific connections: {len(self.elements)} elements")
     
     def rotate_structure(self):
         """Rotate the structure around Y-axis"""
@@ -327,17 +330,17 @@ class FEMPreProcessor:
             length = np.sqrt((x2-x1)**2 + (y2-y1)**2 + (z2-z1)**2)
             element_lengths.append(length)
             
-            # NEW SIMPLE GEOMETRY: All elements have same cross-section (4 cm²)
-            cross_sections.append(self.cross_section)
+            # SIMPLE GEOMETRY (COMMENTED OUT)
+            # # All elements have same cross-section (4 cm²)
+            # cross_sections.append(self.cross_section)
             
-            # OLD COMPLEX GEOMETRY (COMMENTED OUT)
-            # # Assign cross section based on length
-            # if length < 1.9:
-            #     cross_sections.append(1.5 * self.A_0 * 1e-4)  # Straight elements (m²)
-            # elif length > 2:
-            #     cross_sections.append(0.5 * self.A_0 * 1e-4)  # Diagonal elements (m²)
-            # else:
-            #     cross_sections.append(1.0 * self.A_0 * 1e-4)  # Default
+            # COMPLEX GEOMETRY: Assign cross section based on length
+            if length < 1.9:
+                cross_sections.append(1.5 * self.A_0 * 1e-4)  # Straight elements (m²)
+            elif length > 2:
+                cross_sections.append(0.5 * self.A_0 * 1e-4)  # Diagonal elements (m²)
+            else:
+                cross_sections.append(1.0 * self.A_0 * 1e-4)  # Default
         
         self.elements['Element Length'] = element_lengths
         self.elements['Element Cross Section'] = cross_sections
@@ -393,31 +396,31 @@ class FEMPreProcessor:
         print("\nSETTING BOUNDARY CONDITIONS AND LOADS")
         print("="*80)
         
-        # NEW SIMPLE GEOMETRY
-        # Fixed supports at nodes 1, 2, and 4 (all DOFs constrained)
-        self.add_boundary_condition(1, ux=1, uy=1, uz=1)
-        self.add_boundary_condition(2, ux=1, uy=1, uz=1)
-        self.add_boundary_condition(4, ux=1, uy=1, uz=1)
+        # SIMPLE GEOMETRY (COMMENTED OUT)
+        # # Fixed supports at nodes 1, 2, and 4 (all DOFs constrained)
+        # self.add_boundary_condition(1, ux=1, uy=1, uz=1)
+        # self.add_boundary_condition(2, ux=1, uy=1, uz=1)
+        # self.add_boundary_condition(4, ux=1, uy=1, uz=1)
+        # 
+        # print(f"  Fixed supports at nodes: [1, 2, 4]")
+        # 
+        # # Original load: Only Fx=1000N at Node 3
+        # self.add_load(3, fx=1000.0, fy=0.0, fz=0.0)
+        # print(f"  Applied load: Fx = 1000 N at Node 3")
         
-        print(f"  Fixed supports at nodes: [1, 2, 4]")
+        # COMPLEX GEOMETRY: Original crane structure
+        # Fixed supports
+        fixed_nodes = [1, 2, 19, 25, 22, 28]
+        for node in fixed_nodes:
+            self.add_boundary_condition(node, ux=1, uy=1, uz=1)
         
-        # Original load: Only Fx=1000N at Node 3
-        self.add_load(3, fx=1000.0, fy=0.0, fz=0.0)
-        print(f"  Applied load: Fx = 1000 N at Node 3")
+        print(f"  Fixed supports at nodes: {fixed_nodes}")
+        
+        # Applied load
+        self.add_load(29, fx=0.0, fy=0.0, fz=-2000.0)
+        print(f"  Applied load: Fz = -2000 N at Node 29")
         
         print(f"✓ Boundary conditions and loads defined")
-        
-        # OLD COMPLEX GEOMETRY (COMMENTED OUT)
-        # # Fixed supports
-        # fixed_nodes = [1, 2, 19, 25, 22, 28]
-        # for node in fixed_nodes:
-        #     self.add_boundary_condition(node, ux=1, uy=1, uz=1)
-        # 
-        # print(f"  Fixed supports at nodes: {fixed_nodes}")
-        # 
-        # # Applied load
-        # self.add_load(29, fx=0.0, fy=0.0, fz=-2000.0)
-        # print(f"  Applied load: Fz = -2000 N at Node 29")
         
     def visualize_geometry(self, show_plot=True):
         """Visualize the structure geometry with Plotly"""
@@ -649,8 +652,8 @@ def main():
     # Create elements
     preprocessor.create_elements()
     
-    # NOTE: Rotation step removed for simple geometry
-    # OLD: preprocessor.rotate_structure()
+    # Rotate structure (for complex geometry)
+    preprocessor.rotate_structure()
     
     # Set boundary conditions and loads
     preprocessor.set_default_bcs_and_loads()
