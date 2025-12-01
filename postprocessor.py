@@ -312,114 +312,6 @@ class FEMPostProcessor:
         
         return fig
     
-    def plot_magnified_deformation(self, magnification=1000, show_plot=True):
-        """Plot highly magnified deformation"""
-        print("\nCREATING MAGNIFIED DEFORMATION PLOT")
-        print("="*80)
-        
-        fig = go.Figure()
-        
-        # Deformed nodes
-        deformed_nodes = self.nodes.copy()
-        for idx in range(len(self.nodes)):
-            node_num = int(self.nodes.iloc[idx]['Node Number'])
-            disp = self.displacements[self.displacements['Node Number'] == node_num].iloc[0]
-            
-            deformed_nodes.loc[idx, 'X'] += disp['Ux'] * magnification
-            deformed_nodes.loc[idx, 'Y'] += disp['Uy'] * magnification
-            deformed_nodes.loc[idx, 'Z'] += disp['Uz'] * magnification
-        
-        # Undeformed elements
-        edge_x_undef, edge_y_undef, edge_z_undef = [], [], []
-        for idx in range(len(self.elements)):
-            node1_num = int(self.elements.iloc[idx]['Node1'])
-            node2_num = int(self.elements.iloc[idx]['Node2'])
-            
-            node1 = self.nodes[self.nodes['Node Number'] == node1_num].iloc[0]
-            node2 = self.nodes[self.nodes['Node Number'] == node2_num].iloc[0]
-            
-            edge_x_undef.extend([node1['X'], node2['X'], None])
-            edge_y_undef.extend([node1['Y'], node2['Y'], None])
-            edge_z_undef.extend([node1['Z'], node2['Z'], None])
-        
-        fig.add_trace(go.Scatter3d(
-            x=edge_x_undef, y=edge_y_undef, z=edge_z_undef,
-            mode='lines',
-            line=dict(color='cyan', width=4),
-            name='Undeformed',
-            opacity=0.9
-        ))
-        
-        # Deformed elements
-        edge_x_def, edge_y_def, edge_z_def = [], [], []
-        for idx in range(len(self.elements)):
-            node1_num = int(self.elements.iloc[idx]['Node1'])
-            node2_num = int(self.elements.iloc[idx]['Node2'])
-            
-            node1 = deformed_nodes[deformed_nodes['Node Number'] == node1_num].iloc[0]
-            node2 = deformed_nodes[deformed_nodes['Node Number'] == node2_num].iloc[0]
-            
-            edge_x_def.extend([node1['X'], node2['X'], None])
-            edge_y_def.extend([node1['Y'], node2['Y'], None])
-            edge_z_def.extend([node1['Z'], node2['Z'], None])
-        
-        fig.add_trace(go.Scatter3d(
-            x=edge_x_def, y=edge_y_def, z=edge_z_def,
-            mode='lines',
-            line=dict(color='red', width=4),
-            name='Deformed (Magnified)'
-        ))
-        
-        # Undeformed nodes
-        fig.add_trace(go.Scatter3d(
-            x=self.nodes['X'],
-            y=self.nodes['Y'],
-            z=self.nodes['Z'],
-            mode='markers',
-            marker=dict(size=8, color='cyan', opacity=0.9),
-            name='Undeformed Nodes'
-        ))
-        
-        # Deformed nodes
-        fig.add_trace(go.Scatter3d(
-            x=deformed_nodes['X'],
-            y=deformed_nodes['Y'],
-            z=deformed_nodes['Z'],
-            mode='markers+text',
-            marker=dict(size=6, color='red', opacity=0.9),
-            text=[f"{int(n)}" for n in deformed_nodes['Node Number']],
-            textposition='top center',
-            textfont=dict(size=8),
-            name='Deformed Nodes'
-        ))
-        
-        max_disp = self.summary.get('Max_Displacement', 0)
-        title = f'MAGNIFIED Deformed Structure ({magnification}x)<br>'
-        title += f'<sub>Actual Max Displacement: {max_disp*1000:.4f} mm</sub>'
-        
-        fig.update_layout(
-            title=title,
-            scene=dict(
-                xaxis_title='X (m)',
-                yaxis_title='Y (m)',
-                zaxis_title='Z (m)',
-                aspectmode='data',
-                camera=dict(eye=dict(x=1.5, y=1.5, z=1.5))
-            ),
-            width=1200,
-            height=900
-        )
-        
-        if show_plot:
-            fig.show()
-        
-        filename = 'plots/magnified_deformation.html'
-        os.makedirs('plots', exist_ok=True)
-        fig.write_html(filename)
-        print(f"✓ Magnified deformation plot saved to: {filename}")
-        
-        return fig
-    
     def plot_stress_distribution(self, show_plot=True):
         """Plot stress distribution in elements"""
         print("\nCREATING STRESS DISTRIBUTION PLOT")
@@ -431,10 +323,7 @@ class FEMPostProcessor:
         stresses = self.element_forces['Stress'].values
         max_stress = np.abs(stresses).max()
         
-        # Collect all element line segments with their stresses
-        edge_x, edge_y, edge_z = [], [], []
-        edge_stresses = []
-        
+        # Create a separate trace for each element (for proper coloring)
         for idx in range(len(self.elements)):
             elem = self.elements.iloc[idx]
             node1_num = int(elem['Node1'])
@@ -445,23 +334,34 @@ class FEMPostProcessor:
             
             stress = self.element_forces.iloc[idx]['Stress']
             
-            # Add line segment (use None to separate lines)
-            edge_x.extend([node1['X'], node2['X'], None])
-            edge_y.extend([node1['Y'], node2['Y'], None])
-            edge_z.extend([node1['Z'], node2['Z'], None])
-            # Repeat stress value for both endpoints and None
-            edge_stresses.extend([stress, stress, stress])
+            # Normalize stress to [0, 1] for colorscale
+            normalized_stress = (stress + max_stress) / (2 * max_stress)
+            
+            # Get color from RdBu colorscale
+            import plotly.colors as pc
+            colors = pc.sample_colorscale('RdBu', [normalized_stress])[0]
+            
+            # Add this element as a single trace
+            fig.add_trace(go.Scatter3d(
+                x=[node1['X'], node2['X']],
+                y=[node1['Y'], node2['Y']],
+                z=[node1['Z'], node2['Z']],
+                mode='lines',
+                line=dict(color=colors, width=8),
+                showlegend=False,
+                hovertemplate=f'Element {int(elem["Element Number"])}<br>Stress: {stress:.2e} Pa<extra></extra>'
+            ))
         
-        # Plot all elements with colorbar
+        # Add colorbar as a dummy scatter trace
         fig.add_trace(go.Scatter3d(
-            x=edge_x,
-            y=edge_y,
-            z=edge_z,
-            mode='lines',
-            line=dict(
-                color=edge_stresses,
-                width=8,  # Increased from 6 for more visibility
-                colorscale='RdBu',  # Red=negative (compression), Blue=positive (tension) - REVERSED
+            x=[None],
+            y=[None],
+            z=[None],
+            mode='markers',
+            marker=dict(
+                size=0.1,
+                color=[0],
+                colorscale='RdBu',
                 cmin=-max_stress,
                 cmax=max_stress,
                 colorbar=dict(
@@ -475,8 +375,7 @@ class FEMPostProcessor:
                     x=1.02
                 )
             ),
-            showlegend=False,
-            hovertemplate='Stress: %{line.color:.2e} Pa<extra></extra>'
+            showlegend=False
         ))
         
         # Add nodes
@@ -640,10 +539,7 @@ class FEMPostProcessor:
         strains = self.element_forces['Strain'].values
         max_strain = np.abs(strains).max()
         
-        # Collect all element line segments with their strains
-        edge_x, edge_y, edge_z = [], [], []
-        edge_strains = []
-        
+        # Create a separate trace for each element (for proper coloring)
         for idx in range(len(self.elements)):
             elem = self.elements.iloc[idx]
             node1_num = int(elem['Node1'])
@@ -654,23 +550,34 @@ class FEMPostProcessor:
             
             strain = self.element_forces.iloc[idx]['Strain']
             
-            # Add line segment (use None to separate lines)
-            edge_x.extend([node1['X'], node2['X'], None])
-            edge_y.extend([node1['Y'], node2['Y'], None])
-            edge_z.extend([node1['Z'], node2['Z'], None])
-            # Repeat strain value for both endpoints and None
-            edge_strains.extend([strain, strain, strain])
+            # Normalize strain to [0, 1] for colorscale
+            normalized_strain = (strain + max_strain) / (2 * max_strain)
+            
+            # Get color from RdBu colorscale
+            import plotly.colors as pc
+            colors = pc.sample_colorscale('RdBu', [normalized_strain])[0]
+            
+            # Add this element as a single trace
+            fig.add_trace(go.Scatter3d(
+                x=[node1['X'], node2['X']],
+                y=[node1['Y'], node2['Y']],
+                z=[node1['Z'], node2['Z']],
+                mode='lines',
+                line=dict(color=colors, width=8),
+                showlegend=False,
+                hovertemplate=f'Element {int(elem["Element Number"])}<br>Strain: {strain:.2e}<extra></extra>'
+            ))
         
-        # Plot all elements with colorbar
+        # Add colorbar as a dummy scatter trace
         fig.add_trace(go.Scatter3d(
-            x=edge_x,
-            y=edge_y,
-            z=edge_z,
-            mode='lines',
-            line=dict(
-                color=edge_strains,
-                width=8,
-                colorscale='RdBu',  # Red=negative (compression), Blue=positive (tension)
+            x=[None],
+            y=[None],
+            z=[None],
+            mode='markers',
+            marker=dict(
+                size=0.1,
+                color=[0],
+                colorscale='RdBu',
                 cmin=-max_strain,
                 cmax=max_strain,
                 colorbar=dict(
@@ -684,8 +591,7 @@ class FEMPostProcessor:
                     x=1.02
                 )
             ),
-            showlegend=False,
-            hovertemplate='Strain: %{line.color:.2e}<extra></extra>'
+            showlegend=False
         ))
         
         # Add nodes
@@ -766,7 +672,6 @@ def main():
     
     # Create visualizations
     postprocessor.plot_deformed_structure(magnification=1.0, show_plot=True)
-    postprocessor.plot_magnified_deformation(magnification=1000, show_plot=True)
     postprocessor.plot_displacement_distribution(show_plot=True)
     postprocessor.plot_stress_distribution(show_plot=True)
     postprocessor.plot_strain_distribution(show_plot=True)
@@ -776,7 +681,6 @@ def main():
     print("="*80 + "\n")
     print("Visualization files created in plots/ folder:")
     print("  - plots/deformed_structure_interactive.html (with magnification slider)")
-    print("  - plots/magnified_deformation.html")
     print("  - plots/displacement_distribution.html")
     print("  - plots/stress_distribution.html")
     print("  - plots/strain_distribution.html")
