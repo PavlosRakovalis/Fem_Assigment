@@ -71,6 +71,7 @@ class FEMPreProcessor:
         # Geometry parameters for this specific crane/truss structure
         self.L = 1.5 * 1.13      # Element length (m)
         self.A = 1.2 * 1.69      # Base dimension (m)
+        self.B = 1.93            # Additional parameter B (m)
         self.phi = 60 + 9.1      # Rotation angle (degrees)
         self.A_0 = 6 * (0.5 + 0.13)  # Base cross-section parameter (dimensionless)
         
@@ -202,6 +203,55 @@ class FEMPreProcessor:
         print("="*80)
         self.points = rotate_points_around_y(self.points, -self.phi, origin=(self.A, 0.0, 0.0))
         print(f"✓ Structure rotated by {-self.phi:.1f} degrees around Y-axis")
+    
+    def add_post_rotation_elements(self):
+        """Add additional nodes and elements after rotation"""
+        print("\nADDING POST-ROTATION ELEMENTS")
+        print("="*80)
+        
+        # Add 3 new nodes with exact coordinates as specified:
+        # x = -A, z = +B, y = 0 / -L/2 / +L/2
+        A = self.A
+        B = self.B
+        L = self.L
+        
+        # Node 30: x = -A, y = 0, z = +B
+        self._add_node(-A, 0, B)
+        
+        # Node 31: x = -A, y = -L/2, z = +B
+        self._add_node(-A, -L/2, B)
+        
+        # Node 32: x = -A, y = +L/2, z = +B
+        self._add_node(-A, L/2, B)
+        
+        print(f"  Added 3 new nodes (30, 31, 32)")
+        
+        # Add 4 new elements with specific cross-section
+        element_counter = len(self.elements) + 1
+        element_counter = self._add_additional_elements(element_counter)
+        
+        # Recalculate element properties for new elements only
+        self._calculate_new_element_properties()
+        
+        print(f"✓ Added 4 new elements (total: {len(self.elements)} elements)")
+    
+    def _calculate_new_element_properties(self):
+        """Calculate properties only for the last 4 elements"""
+        # Get the last 4 elements
+        start_idx = len(self.elements) - 4
+        
+        for i in range(start_idx, len(self.elements)):
+            node1_idx = int(self.elements.iloc[i]['Node1']) - 1
+            node2_idx = int(self.elements.iloc[i]['Node2']) - 1
+            
+            x1, y1, z1 = self.points.iloc[node1_idx][['X', 'Y', 'Z']]
+            x2, y2, z2 = self.points.iloc[node2_idx][['X', 'Y', 'Z']]
+            
+            length = np.sqrt((x2-x1)**2 + (y2-y1)**2 + (z2-z1)**2)
+            
+            # Set element properties
+            self.elements.at[i, 'Element Length'] = length
+            self.elements.at[i, 'Element Cross Section'] = 0.5 * self.A_0 * 1e-4
         
     def _create_axis_aligned_elements(self, element_counter, tolerance, max_length):
         """Create elements parallel to X, Y, or Z axes"""
@@ -285,6 +335,22 @@ class FEMPreProcessor:
             element_counter += 1
         return element_counter
     
+    def _add_additional_elements(self, element_counter):
+        """Add 4 additional elements with specific cross-section"""
+        # Elements connecting to new nodes with cross-section = 0.5 * A_0 * 1e-4
+        additional_connections = [
+            (22, 30),  # From node 22 to node 30 (x=-A, z=+B, y=0)
+            (28, 30),  # From node 28 to node 30 (x=-A, z=+B, y=0)
+            (19, 31),  # From node 19 to node 31 (x=-A, z=+B, y=-L/2)
+            (25, 32)   # From node 25 to node 32 (x=-A, z=+B, y=+L/2)
+        ]
+        
+        for n1, n2 in additional_connections:
+            self._add_element(element_counter, n1, n2)
+            element_counter += 1
+        
+        return element_counter
+    
     def _add_specific_connections(self, element_counter):
         """Add specific connections"""
         connections = [(9, 28), (16, 22), (23, 1), (2, 17), (1, 10), (2, 3)]
@@ -334,8 +400,19 @@ class FEMPreProcessor:
             # # All elements have same cross-section (4 cm²)
             # cross_sections.append(self.cross_section)
             
-            # COMPLEX GEOMETRY: Assign cross section based on length
-            if length < 1.9:
+            # COMPLEX GEOMETRY: Assign cross section based on length or specific element
+            # Check if this is one of the 4 additional elements (last 4 elements)
+            elem_num = int(self.elements.iloc[i]['Element Number'])
+            node1 = int(self.elements.iloc[i]['Node1'])
+            node2 = int(self.elements.iloc[i]['Node2'])
+            
+            # Additional elements connecting to nodes 30, 31, 32
+            is_additional = (node1 in [22, 28, 19, 25] and node2 in [30, 31, 32]) or \
+                           (node2 in [22, 28, 19, 25] and node1 in [30, 31, 32])
+            
+            if is_additional:
+                cross_sections.append(0.5 * self.A_0 * 1e-4)  # Specified cross-section
+            elif length < 1.9:
                 cross_sections.append(1.5 * self.A_0 * 1e-4)  # Straight elements (m²)
             elif length > 2:
                 cross_sections.append(0.5 * self.A_0 * 1e-4)  # Diagonal elements (m²)
@@ -409,8 +486,8 @@ class FEMPreProcessor:
         # print(f"  Applied load: Fx = 1000 N at Node 3")
         
         # COMPLEX GEOMETRY: Original crane structure
-        # Fixed supports
-        fixed_nodes = [1, 2, 19, 25, 22, 28]
+        # Fixed supports at new nodes (30, 31, 32)
+        fixed_nodes = [1, 2, 30, 31, 32]
         for node in fixed_nodes:
             self.add_boundary_condition(node, ux=1, uy=1, uz=1)
         
@@ -564,13 +641,20 @@ class FEMPreProcessor:
             height=900
         )
         
-        if show_plot:
-            fig.show()
-        
         # Save HTML to plots folder
         os.makedirs('plots', exist_ok=True)
-        fig.write_html('plots/geometry_visualization.html')
-        print(f"✓ Geometry visualization saved to: plots/geometry_visualization.html")
+        html_path = 'plots/geometry_visualization.html'
+        fig.write_html(html_path)
+        print(f"✓ Geometry visualization saved to: {html_path}")
+        
+        if show_plot:
+            # Open in VS Code Simple Browser
+            import subprocess
+            try:
+                subprocess.run(['code', '--reuse-window', html_path], check=False)
+                print(f"  Opening visualization in VS Code...")
+            except:
+                print(f"  To view: Open {html_path} in your browser")
         
         return fig
     
@@ -654,6 +738,9 @@ def main():
     
     # Rotate structure (for complex geometry)
     preprocessor.rotate_structure()
+    
+    # Add additional nodes and elements after rotation
+    preprocessor.add_post_rotation_elements()
     
     # Set boundary conditions and loads
     preprocessor.set_default_bcs_and_loads()
