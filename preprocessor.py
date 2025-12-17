@@ -26,9 +26,11 @@ class FEMPreProcessor:
     def __init__(self):
         self.points = pd.DataFrame(columns=['Node Number', 'X', 'Y', 'Z'])
         self.elements = pd.DataFrame(columns=['Element Number', 'Node1', 'Node2', 'E', 'V'])
-        self.boundary_conditions = {}  # node_id: {'Ux': 0/1, 'Uy': 0/1, 'Uz': 0/1}
-        self.loads = {}  # node_id: {'Fx': value, 'Fy': value, 'Fz': value}
+        self.boundary_conditions = {}  # node_id: {'Ux': 0/1, 'Uy': 0/1, 'Uz': 0/1, 'Rx': 0/1, 'Ry': 0/1, 'Rz': 0/1}
+        self.loads = {}  # node_id: {'Fx': value, 'Fy': value, 'Fz': value, 'Mx': value, 'My': value, 'Mz': value}
         self.materials = {'STEEL': {'E': 210e9, 'nu': 0.3}}
+        self.beam_height = 0.02  # Default beam height (20mm = 0.02m)
+        self.beam_width = 0.02   # Default beam width (20mm = 0.02m)
         
         
     ################################################################################
@@ -250,8 +252,13 @@ class FEMPreProcessor:
             length = np.sqrt((x2-x1)**2 + (y2-y1)**2 + (z2-z1)**2)
             
             # Set element properties
+            A = 0.5 * self.A_0 * 1e-4
+            h = np.sqrt(A)
+            I = (h**4) / 12
+            
             self.elements.at[i, 'Element Length'] = length
-            self.elements.at[i, 'Element Cross Section'] = 0.5 * self.A_0 * 1e-4
+            self.elements.at[i, 'Element Cross Section'] = A
+            self.elements.at[i, 'Moment of Inertia'] = I
         
     def _create_axis_aligned_elements(self, element_counter, tolerance, max_length):
         """Create elements parallel to X, Y, or Z axes"""
@@ -419,8 +426,17 @@ class FEMPreProcessor:
             else:
                 cross_sections.append(1.0 * self.A_0 * 1e-4)  # Default
         
+        # Calculate moment of inertia for each element
+        moments_of_inertia = []
+        for A in cross_sections:
+            # Assuming square cross-section with area A
+            h = np.sqrt(A)  # Side length for square section
+            I = (h**4) / 12  # I = b*h^3/12, for square b=h
+            moments_of_inertia.append(I)
+        
         self.elements['Element Length'] = element_lengths
         self.elements['Element Cross Section'] = cross_sections
+        self.elements['Moment of Inertia'] = moments_of_inertia
         
     
     ################################################################################
@@ -460,13 +476,25 @@ class FEMPreProcessor:
     #                                                                              #
     ################################################################################
     
-    def add_boundary_condition(self, node_id, ux=0, uy=0, uz=0):
-        """Add boundary condition (0=free, 1=fixed)"""
-        self.boundary_conditions[node_id] = {'Ux': ux, 'Uy': uy, 'Uz': uz}
+    def add_boundary_condition(self, node_id, ux=0, uy=0, uz=0, rx=0, ry=0, rz=0):
+        """Add boundary condition (0=free, 1=fixed) - for 3D beam elements
         
-    def add_load(self, node_id, fx=0.0, fy=0.0, fz=0.0):
-        """Add load at node (in Newtons)"""
-        self.loads[node_id] = {'Fx': fx, 'Fy': fy, 'Fz': fz}
+        Args:
+            node_id: Node number
+            ux, uy, uz: Translation constraints (0=free, 1=fixed)
+            rx, ry, rz: Rotation constraints (0=free, 1=fixed)
+        """
+        self.boundary_conditions[node_id] = {'Ux': ux, 'Uy': uy, 'Uz': uz, 'Rx': rx, 'Ry': ry, 'Rz': rz}
+        
+    def add_load(self, node_id, fx=0.0, fy=0.0, fz=0.0, mx=0.0, my=0.0, mz=0.0):
+        """Add load at node (forces in Newtons, moments in N·m)
+        
+        Args:
+            node_id: Node number
+            fx, fy, fz: Forces in X, Y, Z directions (N)
+            mx, my, mz: Moments about X, Y, Z axes (N·m)
+        """
+        self.loads[node_id] = {'Fx': fx, 'Fy': fy, 'Fz': fz, 'Mx': mx, 'My': my, 'Mz': mz}
         
     def set_default_bcs_and_loads(self):
         """Set default boundary conditions and loads for this structure"""
@@ -486,15 +514,15 @@ class FEMPreProcessor:
         # print(f"  Applied load: Fx = 1000 N at Node 3")
         
         # COMPLEX GEOMETRY: Original crane structure
-        # Fixed supports at new nodes (30, 31, 32)
+        # Fixed supports at new nodes (30, 31, 32) - fully fixed (all 6 DOF)
         fixed_nodes = [1, 2, 30, 31, 32]
         for node in fixed_nodes:
-            self.add_boundary_condition(node, ux=1, uy=1, uz=1)
+            self.add_boundary_condition(node, ux=1, uy=1, uz=1, rx=1, ry=1, rz=1)
         
         print(f"  Fixed supports at nodes: {fixed_nodes}")
         
-        # Applied load
-        self.add_load(29, fx=0.0, fy=0.0, fz=-2000.0)
+        # Applied load (vertical force in -Z direction)
+        self.add_load(29, fx=0.0, fy=0.0, fz=-2000.0, mx=0.0, my=0.0, mz=0.0)
         print(f"  Applied load: Fz = -2000 N at Node 29")
         
         print(f"✓ Boundary conditions and loads defined")
@@ -572,7 +600,8 @@ class FEMPreProcessor:
         
         for idx, (node_num, load) in enumerate(self.loads.items()):
             fx, fy, fz = load['Fx'], load['Fy'], load['Fz']
-            magnitude = np.sqrt(fx**2 + fy**2 + fz**2)
+            mx, my, mz = load['Mx'], load['My'], load['Mz']
+            magnitude = np.sqrt(fx**2 + fy**2 + fz**2)  # 3D force magnitude
             
             if magnitude < 1e-6:
                 continue
@@ -581,11 +610,11 @@ class FEMPreProcessor:
             node_pos = self.points[self.points['Node Number'] == node_num].iloc[0]
             x0, y0, z0 = node_pos['X'], node_pos['Y'], node_pos['Z']
             
-            # Calculate arrow direction and length
-            arrow_len = magnitude * force_scale
-            dx_total = fx / magnitude * arrow_len
-            dy_total = fy / magnitude * arrow_len
-            dz_total = fz / magnitude * arrow_len
+            # Calculate arrow direction and length (3D forces)
+            arrow_len = magnitude * force_scale if magnitude > 0 else 0.001
+            dx_total = (fx / magnitude * arrow_len) if magnitude > 0 else 0
+            dy_total = (fy / magnitude * arrow_len) if magnitude > 0 else 0
+            dz_total = (fz / magnitude * arrow_len) if magnitude > 0 else 0
             
             # Calculate shaft and cone portions
             shaft_ratio = 1 - cone_size_ratio
@@ -600,6 +629,8 @@ class FEMPreProcessor:
             # Add force line (shaft of arrow)
             show_in_legend = (idx == 0)
             legend_label = f"External Force: {magnitude:.0f} N" if show_in_legend else None
+            moment_mag = np.sqrt(mx**2 + my**2 + mz**2)
+            moment_str = f"<br>Moment: {moment_mag:.0f} N·m" if moment_mag > 1e-6 else ""
             
             fig.add_trace(go.Scatter3d(
                 x=[x0, x0 + dx_shaft],
@@ -609,7 +640,7 @@ class FEMPreProcessor:
                 line=dict(color=arrow_color, width=arrow_width),
                 showlegend=show_in_legend,
                 name=legend_label,
-                hovertemplate=f'<b>External Force on Node {node_num}</b><br>Magnitude: {magnitude:.0f} N<br>Fx: {fx:.0f} N<br>Fy: {fy:.0f} N<br>Fz: {fz:.0f} N<extra></extra>'
+                hovertemplate=f'<b>External Load on Node {node_num}</b><br>Force: {magnitude:.0f} N<br>Fx: {fx:.0f} N, Fy: {fy:.0f} N, Fz: {fz:.0f} N{moment_str}<extra></extra>'
             ))
             
             # Add arrowhead using cone
@@ -691,25 +722,27 @@ class FEMPreProcessor:
             
             # Elements
             f.write("ELEMENTS\n")
-            f.write("# Elem_ID Node1 Node2 CrossSection E nu\n")
+            f.write("# Elem_ID Node1 Node2 CrossSection MomentOfInertia E nu\n")
             for idx in range(len(self.elements)):
                 elem = self.elements.iloc[idx]
                 f.write(f"{int(elem['Element Number'])} {int(elem['Node1'])} {int(elem['Node2'])} "
-                       f"{elem['Element Cross Section']:.6e} {elem['E']:.6e} {elem['V']:.6f}\n")
+                       f"{elem['Element Cross Section']:.6e} {elem['Moment of Inertia']:.6e} "
+                       f"{elem['E']:.6e} {elem['V']:.6f}\n")
             f.write("\n")
             
             # Boundary Conditions
             f.write("BOUNDARY_CONDITIONS\n")
-            f.write("# Node_ID Ux Uy Uz (0=free, 1=fixed)\n")
+            f.write("# Node_ID Ux Uy Uz Rx Ry Rz (0=free, 1=fixed)\n")
             for node_id, bc in self.boundary_conditions.items():
-                f.write(f"{node_id} {bc['Ux']} {bc['Uy']} {bc['Uz']}\n")
+                f.write(f"{node_id} {bc['Ux']} {bc['Uy']} {bc['Uz']} {bc['Rx']} {bc['Ry']} {bc['Rz']}\n")
             f.write("\n")
             
             # Loads
             f.write("LOADS\n")
-            f.write("# Node_ID Fx Fy Fz (Newtons)\n")
+            f.write("# Node_ID Fx Fy Fz Mx My Mz (N, N, N, N·m, N·m, N·m)\n")
             for node_id, load in self.loads.items():
-                f.write(f"{node_id} {load['Fx']:.6f} {load['Fy']:.6f} {load['Fz']:.6f}\n")
+                f.write(f"{node_id} {load['Fx']:.6f} {load['Fy']:.6f} {load['Fz']:.6f} ")
+                f.write(f"{load['Mx']:.6f} {load['My']:.6f} {load['Mz']:.6f}\n")
             f.write("\n")
             
             f.write("END\n")

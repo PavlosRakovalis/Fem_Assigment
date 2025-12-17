@@ -75,7 +75,7 @@ class FEMPostProcessor:
                     })
             elif current_section == 'ELEMENTS':
                 parts = line.split()
-                if len(parts) == 6:
+                if len(parts) == 7:  # Updated for beam elements: Elem Node1 Node2 A I E nu
                     elements_data.append({
                         'Element Number': int(parts[0]),
                         'Node1': int(parts[1]),
@@ -126,31 +126,42 @@ class FEMPostProcessor:
             
             if current_section == 'DISPLACEMENTS':
                 parts = line.split()
-                if len(parts) == 5:
+                if len(parts) == 8:
                     displacements_data.append({
                         'Node Number': int(parts[0]),
                         'Ux': float(parts[1]),
                         'Uy': float(parts[2]),
                         'Uz': float(parts[3]),
-                        'Magnitude': float(parts[4])
+                        'Rx': float(parts[4]),
+                        'Ry': float(parts[5]),
+                        'Rz': float(parts[6]),
+                        'Magnitude': float(parts[7])
                     })
             elif current_section == 'REACTIONS':
                 parts = line.split()
-                if len(parts) == 4:
+                if len(parts) == 7:
                     reactions_data.append({
                         'Node Number': int(parts[0]),
                         'Rx': float(parts[1]),
                         'Ry': float(parts[2]),
-                        'Rz': float(parts[3])
+                        'Rz': float(parts[3]),
+                        'Mrx': float(parts[4]),
+                        'Mry': float(parts[5]),
+                        'Mrz': float(parts[6])
                     })
             elif current_section == 'ELEMENT_FORCES':
                 parts = line.split()
-                if len(parts) == 4:
+                if len(parts) == 9:  # Updated for beam elements
                     element_forces_data.append({
                         'Element Number': int(parts[0]),
                         'Axial Force': float(parts[1]),
-                        'Stress': float(parts[2]),
-                        'Strain': float(parts[3])
+                        'Shear Force': float(parts[2]),
+                        'Moment 1': float(parts[3]),
+                        'Moment 2': float(parts[4]),
+                        'Axial Stress': float(parts[5]),
+                        'Bending Stress': float(parts[6]),
+                        'Combined Stress': float(parts[7]),
+                        'Strain': float(parts[8])
                     })
             elif current_section == 'SUMMARY':
                 parts = line.split()
@@ -320,7 +331,7 @@ class FEMPostProcessor:
         fig = go.Figure()
         
         # Get stress values
-        stresses = self.element_forces['Stress'].values
+        stresses = self.element_forces['Combined Stress'].values
         max_stress = np.abs(stresses).max()
         
         # Create a separate trace for each element (for proper coloring)
@@ -332,7 +343,7 @@ class FEMPostProcessor:
             node1 = self.nodes[self.nodes['Node Number'] == node1_num].iloc[0]
             node2 = self.nodes[self.nodes['Node Number'] == node2_num].iloc[0]
             
-            stress = self.element_forces.iloc[idx]['Stress']
+            stress = self.element_forces.iloc[idx]['Combined Stress']
             
             # Normalize stress to [0, 1] for colorscale
             normalized_stress = (stress + max_stress) / (2 * max_stress)
@@ -647,11 +658,11 @@ class FEMPostProcessor:
         
         print("\n  Top 5 Elements by Stress:")
         top_stress = self.element_forces.copy()
-        top_stress['Abs Stress'] = top_stress['Stress'].abs()
+        top_stress['Abs Stress'] = top_stress['Combined Stress'].abs()
         top_stress = top_stress.nlargest(5, 'Abs Stress')
         for idx in range(len(top_stress)):
             row = top_stress.iloc[idx]
-            print(f"    Element {int(row['Element Number'])}: {row['Stress']/1e6:.2f} MPa")
+            print(f"    Element {int(row['Element Number'])}: {row['Combined Stress']/1e6:.2f} MPa")
 
 
 def main():

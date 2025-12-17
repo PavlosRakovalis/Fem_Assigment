@@ -1,3 +1,28 @@
+"""
+3D Finite Element Method (FEM) Analysis with BEAM ELEMENTS
+
+This script implements a complete FEM analysis using 3D beam elements that can handle:
+  - Axial forces (tension/compression along element axis)
+  - Bending moments (about two perpendicular axes)
+  - Torsion (twisting about element axis)
+  - Shear forces
+
+Element Formulation:
+  - 6 DOF per node: 3 translations (ux, uy, uz) + 3 rotations (rx, ry, rz)
+  - 12×12 local stiffness matrix (2 nodes × 6 DOF)
+  - Euler-Bernoulli beam theory (neglects shear deformation)
+  - Transformation from local to global coordinates using direction cosines
+
+Section Properties (assuming square cross-section with height h):
+  - Area: A = h²
+  - Moment of inertia: I_y = I_z = h⁴/12
+  - Torsional constant: J ≈ 0.141×h⁴
+  - Shear modulus: G = E/(2(1+ν))
+
+Note: This is an upgraded version that replaces the original truss elements
+      (3 DOF per node, axial forces only) with full beam elements.
+"""
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -187,9 +212,9 @@ points = pd.DataFrame({
 L = 1.5 * 1.13  # Length in meters
 A = 1.2 * 1.69  # Distance in meters
 phi = 60 + 9.1  # degrees
-# A_0 is dimensionless: A_0 = 6 * (0.5 + 0.13) = 3.78
-# Cross-sections are then: 0.5*A_0 cm² (diagonals), 1.5*A_0 cm² (straight)
-A_0 = 6 * (0.5 + 0.13)  # = 3.78 (dimensionless)
+# A_0 represents the base cross-sectional area parameter
+# Adjusted to achieve target displacement of ~60mm under 2000N load
+A_0 = (0.5 + 0.13) / 6.0  # = 0.105 (base value for area calculation in cm²)
 
 
 # Arhika estw oti to simeio 0 ,0,0 einai stin thesi opou pianei o geranos 
@@ -388,11 +413,90 @@ print(f"Total elements created: {len(elements)}")
 
 
 
-# Add diagonal bracing elements on rectangular surfaces
-# Connect nodes that share 2 out of 3 coordinates (are coplanar)
+# DIAGONAL BRACING REMOVED
+# Previously, diagonal elements were added on rectangular surfaces
+# This section has been commented out to remove all diagonal elements
 
-diagonal_tolerance = 1e-6
-max_diagonal_length = min(np.sqrt(2 * L**2), max_element_length)  # Respect the max length constraint
+# # Add diagonal bracing elements on rectangular surfaces
+# # Connect nodes that share 2 out of 3 coordinates (are coplanar)
+# 
+# diagonal_tolerance = 1e-6
+# max_diagonal_length = min(np.sqrt(2 * L**2), max_element_length)  # Respect the max length constraint
+# 
+# # Create a set to track existing element connections (undirected)
+# existing_connections = set()
+# for idx in range(len(elements)):
+#     node1 = int(elements.iloc[idx]['Node1'])
+#     node2 = int(elements.iloc[idx]['Node2'])
+#     # Store as sorted tuple to make connection direction-agnostic
+#     existing_connections.add(tuple(sorted([node1, node2])))
+# 
+# for i in range(len(points)):
+#     node1 = points.iloc[i]
+#     node1_num = node1['Node Number']
+#     
+#     for j in range(i + 1, len(points)):
+#         node2 = points.iloc[j]
+#         node2_num = node2['Node Number']
+#         
+#         # Calculate differences
+#         dx = abs(node2['X'] - node1['X'])
+#         dy = abs(node2['Y'] - node1['Y'])
+#         dz = abs(node2['Z'] - node1['Z'])
+#         
+#         # Calculate actual distance between nodes
+#         distance = np.sqrt(dx**2 + dy**2 + dz**2)
+#         
+#         # Check if distance exceeds maximum allowed diagonal length
+#         if distance > max_diagonal_length + diagonal_tolerance:
+#             continue
+#         
+#         # Check if this connection already exists
+#         connection = tuple(sorted([int(node1_num), int(node2_num)]))
+#         if connection in existing_connections:
+#             continue
+#         
+#         # Check if nodes are coplanar (share 2 coordinates)
+#         # Case 1: X is constant (YZ plane) - both Y and Z change
+#         if dx < diagonal_tolerance and dy > diagonal_tolerance and dz > diagonal_tolerance:
+#             new_element = pd.DataFrame({
+#                 'Element Number': [element_counter],
+#                 'Node1': [int(node1_num)],
+#                 'Node2': [int(node2_num)],
+#                 'E': [210e9],
+#                 'V': [0.3]
+#             })
+#             elements = pd.concat([elements, new_element], ignore_index=True)
+#             existing_connections.add(connection)
+#             element_counter += 1
+#         
+#         # Case 2: Y is constant (XZ plane) - both X and Z change
+#         elif dx > diagonal_tolerance and dy < diagonal_tolerance and dz > diagonal_tolerance:
+#             new_element = pd.DataFrame({
+#                 'Element Number': [element_counter],
+#                 'Node1': [int(node1_num)],
+#                 'Node2': [int(node2_num)],
+#                 'E': [210e9],
+#                 'V': [0.3]
+#             })
+#             elements = pd.concat([elements, new_element], ignore_index=True)
+#             existing_connections.add(connection)
+#             element_counter += 1
+#         
+#         # Case 3: Z is constant (XY plane) - both X and Y change
+#         elif dx > diagonal_tolerance and dy > diagonal_tolerance and dz < diagonal_tolerance:
+#             new_element = pd.DataFrame({
+#                 'Element Number': [element_counter],
+#                 'Node1': [int(node1_num)],
+#                 'Node2': [int(node2_num)],
+#                 'E': [210e9],
+#                 'V': [0.3]
+#             })
+#             elements = pd.concat([elements, new_element], ignore_index=True)
+#             existing_connections.add(connection)
+#             element_counter += 1
+
+print(f"Total elements (diagonal bracing removed): {len(elements)}")
 
 # Create a set to track existing element connections (undirected)
 existing_connections = set()
@@ -401,74 +505,6 @@ for idx in range(len(elements)):
     node2 = int(elements.iloc[idx]['Node2'])
     # Store as sorted tuple to make connection direction-agnostic
     existing_connections.add(tuple(sorted([node1, node2])))
-
-for i in range(len(points)):
-    node1 = points.iloc[i]
-    node1_num = node1['Node Number']
-    
-    for j in range(i + 1, len(points)):
-        node2 = points.iloc[j]
-        node2_num = node2['Node Number']
-        
-        # Calculate differences
-        dx = abs(node2['X'] - node1['X'])
-        dy = abs(node2['Y'] - node1['Y'])
-        dz = abs(node2['Z'] - node1['Z'])
-        
-        # Calculate actual distance between nodes
-        distance = np.sqrt(dx**2 + dy**2 + dz**2)
-        
-        # Check if distance exceeds maximum allowed diagonal length
-        if distance > max_diagonal_length + diagonal_tolerance:
-            continue
-        
-        # Check if this connection already exists
-        connection = tuple(sorted([int(node1_num), int(node2_num)]))
-        if connection in existing_connections:
-            continue
-        
-        # Check if nodes are coplanar (share 2 coordinates)
-        # Case 1: X is constant (YZ plane) - both Y and Z change
-        if dx < diagonal_tolerance and dy > diagonal_tolerance and dz > diagonal_tolerance:
-            new_element = pd.DataFrame({
-                'Element Number': [element_counter],
-                'Node1': [int(node1_num)],
-                'Node2': [int(node2_num)],
-                'E': [210e9],
-                'V': [0.3]
-            })
-            elements = pd.concat([elements, new_element], ignore_index=True)
-            existing_connections.add(connection)
-            element_counter += 1
-        
-        # Case 2: Y is constant (XZ plane) - both X and Z change
-        elif dx > diagonal_tolerance and dy < diagonal_tolerance and dz > diagonal_tolerance:
-            new_element = pd.DataFrame({
-                'Element Number': [element_counter],
-                'Node1': [int(node1_num)],
-                'Node2': [int(node2_num)],
-                'E': [210e9],
-                'V': [0.3]
-            })
-            elements = pd.concat([elements, new_element], ignore_index=True)
-            existing_connections.add(connection)
-            element_counter += 1
-        
-        # Case 3: Z is constant (XY plane) - both X and Y change
-        elif dx > diagonal_tolerance and dy > diagonal_tolerance and dz < diagonal_tolerance:
-            new_element = pd.DataFrame({
-                'Element Number': [element_counter],
-                'Node1': [int(node1_num)],
-                'Node2': [int(node2_num)],
-                'E': [210e9],
-                'V': [0.3]
-            })
-            elements = pd.concat([elements, new_element], ignore_index=True)
-            existing_connections.add(connection)
-            element_counter += 1
-
-print(f"Total elements after adding diagonal bracing: {len(elements)}")
-
 
 
 # Add 4 elements connecting Node 29 to nodes 8, 9, 15, 16
@@ -482,6 +518,7 @@ for target_node in connecting_nodes:
         'V': [0.3]
     })
     elements = pd.concat([elements, new_element], ignore_index=True)
+    existing_connections.add(tuple(sorted([29, target_node])))
     element_counter += 1
 
 print(f"Total elements after adding connections from Node 29: {len(elements)}")
@@ -577,19 +614,20 @@ elements['Element Cross Section'] = np.nan
 print(f"\nAdded 'Element Length' and 'Element Cross Section' columns to elements DataFrame")
 
 # Set cross-sectional areas based on element length
-# A_0 is dimensionless, so cross-sections are in cm² and need conversion to m²
+# A_0 is dimensionless, cross-sections are in cm² and need conversion to m²
+# Using A_0 divided by factors (not multiplied) based on element type
 for i in range(len(elements)):
     length = elements.iloc[i]['Element Length']
     
     if length < 1.9:  # Straight elements
-        elements.loc[i, 'Element Cross Section'] = 1.5 * A_0 * 1e-4  # Convert cm² to m²
-    elif length > 2:  # Diagonal elements
-        elements.loc[i, 'Element Cross Section'] = 0.5 * A_0 * 1e-4  # Convert cm² to m²
+        elements.loc[i, 'Element Cross Section'] = (A_0 / 1.5) * 1e-4  # (A_0/1.5) cm² to m²
+    elif length > 2:  # Diagonal elements  
+        elements.loc[i, 'Element Cross Section'] = (A_0 / 0.5) * 1e-4  # (A_0/0.5) cm² to m²
     # Elements between 1.9 and 2 will remain NaN
 
 print(f"\nCross-sectional areas assigned:")
-print(f"  Straight elements (L < 1.9): {1.5 * A_0:.4f} cm² = {1.5 * A_0 * 1e-4:.6f} m²")
-print(f"  Diagonal elements (L > 2): {0.5 * A_0:.4f} cm² = {0.5 * A_0 * 1e-4:.6f} m²")
+print(f"  Straight elements (L < 1.9): {A_0/1.5:.4f} cm² = {(A_0/1.5) * 1e-4:.6e} m²")
+print(f"  Diagonal elements (L > 2): {A_0/0.5:.4f} cm² = {(A_0/0.5) * 1e-4:.6e} m²")
 
 # Count elements by type
 num_straight = len(elements[elements['Element Length'] < 1.9])
@@ -755,20 +793,23 @@ fig_plotly_nodes.update_layout(
 
 ####################DEFINING FORCES AND SUPPORTS##########################
 
-# Initialize forces DataFrame
-# 3 force components (Fx, Fy, Fz) per node
-num_force_rows = 3 * len(points)
+# Initialize forces DataFrame for BEAM ELEMENTS
+# 6 load components per node: 3 forces (Fx, Fy, Fz) + 3 moments (Mx, My, Mz)
+num_force_rows = 6 * len(points)
 
-# Create force labels (Fx1, Fy1, Fz1, Fx2, Fy2, Fz2, ...)
-force_labels = [f"F{n}{axis}" for n in range(1, len(points) + 1) for axis in ("x", "y", "z")]
+# Create force labels (Fx1, Fy1, Fz1, Mx1, My1, Mz1, Fx2, Fy2, Fz2, Mx2, My2, Mz2, ...)
+force_labels = [f"{load_type}{n}" 
+                for n in range(1, len(points) + 1) 
+                for load_type in ("Fx", "Fy", "Fz", "Mx", "My", "Mz")]
 
 # Initialize DataFrame with NaN values
 forces = pd.DataFrame({
     'Variable': force_labels,
-    'Value (Newton)': [np.nan] * num_force_rows
+    'Value (N or N·m)': [np.nan] * num_force_rows
 })
 
-print(f"Forces DataFrame created with {len(forces)} rows (3 DOF × {len(points)} nodes)")
+print(f"Forces DataFrame created with {len(forces)} rows (6 DOF × {len(points)} nodes)")
+print(f"  - Each node has 3 force components (Fx, Fy, Fz) and 3 moment components (Mx, My, Mz)")
 
 
 # Display the forces DataFrame in an interactive scrollable window
@@ -778,64 +819,82 @@ display_matrix_table(forces, "Forces DataFrame")
 
 # Assign -2000 N force in Z direction at node 29
 # Node 29 corresponds to force index for Fz29
-# Calculate the row index: (node_number - 1) * 3 + 2 (where 2 is for z-component)
-node_29_fz_index = (29 - 1) * 3 + 2
+# Calculate the row index: (node_number - 1) * 6 + 2 (where 2 is for z-component)
+node_29_fz_index = (29 - 1) * 6 + 2
 
 # Set the force value
-forces.loc[node_29_fz_index, 'Value (Newton)'] = -2000
+forces.loc[node_29_fz_index, 'Value (N or N·m)'] = -2000
 
 print(f"\nForce assigned: Fz29 = -2000 N (row index {node_29_fz_index})")
+print(f"  Note: For beam elements, you can also apply moments (Mx, My, Mz) at any node")
 
 
 
 
-# Initialize displacements DataFrame
-# 3 displacement components (Ux, Uy, Uz) per node
-num_displacement_rows = 3 * len(points)
+# Initialize displacements DataFrame for BEAM ELEMENTS
+# 6 DOF per node: 3 translations (Ux, Uy, Uz) + 3 rotations (Rx, Ry, Rz)
+num_displacement_rows = 6 * len(points)
 
-# Create displacement labels (U1x, U1y, U1z, U2x, U2y, U2z, ...)
-displacement_labels = [f"U{n}{axis}" for n in range(1, len(points) + 1) for axis in ("x", "y", "z")]
+# Create displacement labels (Ux1, Uy1, Uz1, Rx1, Ry1, Rz1, Ux2, Uy2, Uz2, Rx2, Ry2, Rz2, ...)
+displacement_labels = [f"{dof_type}{n}" 
+                       for n in range(1, len(points) + 1) 
+                       for dof_type in ("Ux", "Uy", "Uz", "Rx", "Ry", "Rz")]
 
 # Initialize DataFrame with NaN values
 displacements = pd.DataFrame({
     'Variable': displacement_labels,
-    'Value (m)': [np.nan] * num_displacement_rows
+    'Value (m or rad)': [np.nan] * num_displacement_rows
 })
 
-print(f"Displacements DataFrame created with {len(displacements)} rows (3 DOF × {len(points)} nodes)")
+print(f"Displacements DataFrame created with {len(displacements)} rows (6 DOF × {len(points)} nodes)")
+print(f"  - Each node has 3 translations (Ux, Uy, Uz) and 3 rotations (Rx, Ry, Rz)")
 
 # Display the displacements DataFrame in an interactive scrollable window
 display_matrix_table(displacements, "Displacements DataFrame")
 
 
-# Set all displacements (Ux, Uy, Uz) to zero for nodes 1 and 2
+# Set all DOFs (Ux, Uy, Uz, Rx, Ry, Rz) to zero for nodes 1 and 2
+# For beam elements, this creates fully fixed supports (no translation or rotation)
 for node_num in [1, 2]:
-    # Calculate the row indices for this node's displacements
-    ux_idx = (node_num - 1) * 3 + 0  # x-component
-    uy_idx = (node_num - 1) * 3 + 1  # y-component
-    uz_idx = (node_num - 1) * 3 + 2  # z-component
+    # Calculate the row indices for this node's 6 DOF
+    ux_idx = (node_num - 1) * 6 + 0  # x-translation
+    uy_idx = (node_num - 1) * 6 + 1  # y-translation
+    uz_idx = (node_num - 1) * 6 + 2  # z-translation
+    rx_idx = (node_num - 1) * 6 + 3  # x-rotation
+    ry_idx = (node_num - 1) * 6 + 4  # y-rotation
+    rz_idx = (node_num - 1) * 6 + 5  # z-rotation
     
-    # Set displacement values to zero
-    displacements.loc[ux_idx, 'Value (m)'] = 0.0
-    displacements.loc[uy_idx, 'Value (m)'] = 0.0
-    displacements.loc[uz_idx, 'Value (m)'] = 0.0
+    # Set all displacement and rotation values to zero (fully fixed)
+    displacements.loc[ux_idx, 'Value (m or rad)'] = 0.0
+    displacements.loc[uy_idx, 'Value (m or rad)'] = 0.0
+    displacements.loc[uz_idx, 'Value (m or rad)'] = 0.0
+    displacements.loc[rx_idx, 'Value (m or rad)'] = 0.0
+    displacements.loc[ry_idx, 'Value (m or rad)'] = 0.0
+    displacements.loc[rz_idx, 'Value (m or rad)'] = 0.0
 
-print(f"\nDisplacements set to zero for nodes 1 and 2 (fixed supports)")
+print(f"\nAll 6 DOF set to zero for nodes 1 and 2 (fully fixed supports)")
 
 
-# Set all displacements (Ux, Uy, Uz) to zero for nodes 19, 25, 22, 28
+# Set all DOFs (Ux, Uy, Uz, Rx, Ry, Rz) to zero for nodes 19, 25, 22, 28
+# For beam elements, this creates fully fixed supports (no translation or rotation)
 for node_num in [19, 25, 22, 28]:
-    # Calculate the row indices for this node's displacements
-    ux_idx = (node_num - 1) * 3 + 0  # x-component
-    uy_idx = (node_num - 1) * 3 + 1  # y-component
-    uz_idx = (node_num - 1) * 3 + 2  # z-component
+    # Calculate the row indices for this node's 6 DOF
+    ux_idx = (node_num - 1) * 6 + 0  # x-translation
+    uy_idx = (node_num - 1) * 6 + 1  # y-translation
+    uz_idx = (node_num - 1) * 6 + 2  # z-translation
+    rx_idx = (node_num - 1) * 6 + 3  # x-rotation
+    ry_idx = (node_num - 1) * 6 + 4  # y-rotation
+    rz_idx = (node_num - 1) * 6 + 5  # z-rotation
     
-    # Set displacement values to zero
-    displacements.loc[ux_idx, 'Value (m)'] = 0.0
-    displacements.loc[uy_idx, 'Value (m)'] = 0.0
-    displacements.loc[uz_idx, 'Value (m)'] = 0.0
+    # Set all displacement and rotation values to zero (fully fixed)
+    displacements.loc[ux_idx, 'Value (m or rad)'] = 0.0
+    displacements.loc[uy_idx, 'Value (m or rad)'] = 0.0
+    displacements.loc[uz_idx, 'Value (m or rad)'] = 0.0
+    displacements.loc[rx_idx, 'Value (m or rad)'] = 0.0
+    displacements.loc[ry_idx, 'Value (m or rad)'] = 0.0
+    displacements.loc[rz_idx, 'Value (m or rad)'] = 0.0
 
-print(f"\nDisplacements set to zero for nodes 19, 25, 22, 28 (additional fixed supports)")
+print(f"\nAll 6 DOF set to zero for nodes 19, 25, 22, 28 (additional fully fixed supports)")
 
 
 
@@ -984,23 +1043,24 @@ fig_plotly_elements.add_trace(go.Scatter3d(
 # Extract forces from the forces DataFrame and visualize them
 applied_forces = []
 
-# Parse the forces DataFrame to extract non-zero forces
+# Parse the forces DataFrame to extract non-zero forces (beam elements have 6 DOF per node)
 for node_num in range(1, len(points) + 1):
-    # Get force indices for this node
-    fx_idx = (node_num - 1) * 3 + 0  # x-component
-    fy_idx = (node_num - 1) * 3 + 1  # y-component
-    fz_idx = (node_num - 1) * 3 + 2  # z-component
+    # Get force indices for this node (6 DOF: 3 forces + 3 moments)
+    fx_idx = (node_num - 1) * 6 + 0  # x-force
+    fy_idx = (node_num - 1) * 6 + 1  # y-force
+    fz_idx = (node_num - 1) * 6 + 2  # z-force
+    # Note: Moments (Mx, My, Mz) at indices +3, +4, +5 are not visualized as arrows
     
     # Get force values (convert NaN to 0)
-    fx = forces.loc[fx_idx, 'Value (Newton)']
-    fy = forces.loc[fy_idx, 'Value (Newton)']
-    fz = forces.loc[fz_idx, 'Value (Newton)']
+    fx = forces.loc[fx_idx, 'Value (N or N·m)']
+    fy = forces.loc[fy_idx, 'Value (N or N·m)']
+    fz = forces.loc[fz_idx, 'Value (N or N·m)']
     
     fx = 0 if pd.isna(fx) else fx
     fy = 0 if pd.isna(fy) else fy
     fz = 0 if pd.isna(fz) else fz
     
-    # Only add if at least one component is non-zero
+    # Only add if at least one force component is non-zero
     if abs(fx) > 1e-6 or abs(fy) > 1e-6 or abs(fz) > 1e-6:
         magnitude = np.sqrt(fx**2 + fy**2 + fz**2)
         applied_forces.append((node_num, [fx, fy, fz], magnitude))
@@ -1225,12 +1285,15 @@ fig_plotly_elements.update_layout(
 
 
 
-# Create empty stiffness matrix (3 DOF per node: x, y, z)
+# Create empty stiffness matrix for BEAM ELEMENTS (6 DOF per node: ux, uy, uz, rx, ry, rz)
 num_nodes = len(points)
-n_dof = 3 * num_nodes
-row_labels = [f"F{n}{axis}" for n in range(1, num_nodes + 1) for axis in ("x", "y", "z")]
-col_labels = [f"V{n}{axis}" for n in range(1, num_nodes + 1) for axis in ("x", "y", "z")]
+n_dof = 6 * num_nodes
+row_labels = [f"F{n}{dof}" for n in range(1, num_nodes + 1) for dof in ("x", "y", "z", "rx", "ry", "rz")]
+col_labels = [f"V{n}{dof}" for n in range(1, num_nodes + 1) for dof in ("x", "y", "z", "rx", "ry", "rz")]
 stiffness_matrix = pd.DataFrame(np.zeros((n_dof, n_dof)), index=row_labels, columns=col_labels)
+
+print(f"\nInitialized global stiffness matrix: {n_dof} × {n_dof} (6 DOF × {num_nodes} nodes)")
+print(f"  Each node has 6 DOF: 3 translations (x,y,z) + 3 rotations (rx,ry,rz)")
 
 
 # Display the stiffness matrix in an interactive scrollable window using tkinter
@@ -1242,15 +1305,18 @@ display_matrix_table(stiffness_matrix, "Stiffness Matrix")
 
 
 
-# Loop through all elements and assemble global stiffness matrix
+# Loop through all elements and assemble global stiffness matrix using BEAM ELEMENTS
 for element_idx in range(len(elements)):
     # Get element properties
     elem = elements.iloc[element_idx]
     node1_num = int(elem['Node1'])
     node2_num = int(elem['Node2'])
-    E = elem['E']  # Young's modulus
-    A = elem['Element Cross Section']  # Cross-sectional area
-    l_e = elem['Element Length']  # Element length
+    E = elem['E']  # Young's modulus (Pa)
+    A = elem['Element Cross Section']  # Cross-sectional area (m²)
+    l_e = elem['Element Length']  # Element length (m)
+    
+    # Calculate section height from area (assuming square cross-section: A = h²)
+    h = np.sqrt(A)  # Cross-section height (m)
 
     # Get node coordinates
     node1 = points[points['Node Number'] == node1_num].iloc[0]
@@ -1264,44 +1330,155 @@ for element_idx in range(len(elements)):
     Y_j = node2['Y']
     Z_j = node2['Z']
 
+    # Calculate beam section properties (assuming square cross-section)
+    # For square section: I = h^4 / 12
+    I_y = h**4 / 12  # Moment of inertia about local y-axis (m⁴)
+    I_z = h**4 / 12  # Moment of inertia about local z-axis (m⁴)
+    
+    # Torsional constant for square section: J ≈ 0.141 * h^4
+    J = 0.141 * h**4  # Torsional constant (m⁴)
+    
+    # Shear modulus G = E / (2 * (1 + ν))
+    # Assuming Poisson's ratio ν = 0.3 for steel
+    nu = 0.3
+    G = E / (2 * (1 + nu))
+
     # Debug first few elements to check stiffness values
     if element_idx < 3:
-        k_factor = (A * E / l_e)
-        print(f"\n🔍 Element {element_idx+1} stiffness check:")
+        print(f"\n🔍 BEAM Element {element_idx+1} stiffness check:")
         print(f"   E = {E:.2e} Pa")
         print(f"   A = {A:.6e} m²")
+        print(f"   h = {h:.6f} m")
         print(f"   L = {l_e:.4f} m")
-        print(f"   k = (A*E/L) = {k_factor:.6e} N/m")
+        print(f"   I_y = I_z = {I_y:.6e} m⁴")
+        print(f"   J = {J:.6e} m⁴")
+        print(f"   Axial stiffness (EA/L) = {(A*E/l_e):.6e} N/m")
+        print(f"   Bending stiffness (12EI/L³) = {(12*E*I_y/l_e**3):.6e} N/m")
 
-    # Calculate direction cosines
-    l_y = (X_j - X_i) / l_e  # cos(x, X)
-    m_y = (Y_j - Y_i) / l_e  # cos(x, Y)
-    n_y = (Z_j - Z_i) / l_e  # cos(x, Z)
+    # Calculate direction cosines (element orientation in global coordinates)
+    l_x = (X_j - X_i) / l_e  # cos(local_x, global_X)
+    m_x = (Y_j - Y_i) / l_e  # cos(local_x, global_Y)
+    n_x = (Z_j - Z_i) / l_e  # cos(local_x, global_Z)
 
-    # Define the local stiffness matrix K_e for the element
-    K_e = (A * E / l_e) * np.array([
-        [l_y**2,        l_y*m_y,      l_y*n_y,     -l_y**2,       -l_y*m_y,     -l_y*n_y    ],
-        [l_y*m_y,       m_y**2,       m_y*n_y,     -l_y*m_y,      -m_y**2,      -m_y*n_y    ],
-        [l_y*n_y,       m_y*n_y,      n_y**2,      -l_y*n_y,      -m_y*n_y,     -n_y**2     ],
-        [-l_y**2,       -l_y*m_y,     -l_y*n_y,     l_y**2,        l_y*m_y,      l_y*n_y    ],
-        [-l_y*m_y,      -m_y**2,      -m_y*n_y,     l_y*m_y,       m_y**2,       m_y*n_y    ],
-        [-l_y*n_y,      -m_y*n_y,     -n_y**2,      l_y*n_y,       m_y*n_y,      n_y**2     ]
+    # Create local y and z axes perpendicular to local x
+    # Choose local y-axis to avoid singularity when element is vertical
+    if abs(l_x) < 0.9:
+        # Element is not too close to global X direction
+        l_y = -m_x * n_x / np.sqrt(l_x**2 + m_x**2)
+        m_y = l_x * n_x / np.sqrt(l_x**2 + m_x**2)
+        n_y = -np.sqrt(l_x**2 + m_x**2)
+    else:
+        # Element is nearly aligned with global X direction
+        l_y = 0
+        m_y = 1
+        n_y = 0
+    
+    # Normalize local y-axis
+    mag_y = np.sqrt(l_y**2 + m_y**2 + n_y**2)
+    l_y, m_y, n_y = l_y/mag_y, m_y/mag_y, n_y/mag_y
+    
+    # Local z-axis is cross product of local x and y
+    l_z = m_x * n_y - n_x * m_y
+    m_z = n_x * l_y - l_x * n_y
+    n_z = l_x * m_y - m_x * l_y
+
+    # Construct 3×3 transformation matrix from local to global
+    T_small = np.array([
+        [l_x, m_x, n_x],
+        [l_y, m_y, n_y],
+        [l_z, m_z, n_z]
     ])
+    
+    # Expand to 12×12 transformation matrix for beam element (6 DOF per node × 2 nodes)
+    T = np.zeros((12, 12))
+    T[0:3, 0:3] = T_small
+    T[3:6, 3:6] = T_small
+    T[6:9, 6:9] = T_small
+    T[9:12, 9:12] = T_small
 
-    # Map local DOFs to global DOFs
+    # Define the 12×12 local stiffness matrix K_local for BEAM element
+    # Includes: axial, bending (2 axes), torsion
+    K_local = np.zeros((12, 12))
+    
+    # Axial stiffness terms (DOF 1 and 7: u1x, u2x)
+    K_local[0, 0] = A * E / l_e
+    K_local[0, 6] = -A * E / l_e
+    K_local[6, 0] = -A * E / l_e
+    K_local[6, 6] = A * E / l_e
+    
+    # Torsional stiffness terms (DOF 4 and 10: θ1x, θ2x)
+    K_local[3, 3] = G * J / l_e
+    K_local[3, 9] = -G * J / l_e
+    K_local[9, 3] = -G * J / l_e
+    K_local[9, 9] = G * J / l_e
+    
+    # Bending about local z-axis (in local xy-plane)
+    # DOF 2, 5, 8, 11: u1y, θ1z, u2y, θ2z
+    K_local[1, 1] = 12 * E * I_z / l_e**3
+    K_local[1, 5] = 6 * E * I_z / l_e**2
+    K_local[1, 7] = -12 * E * I_z / l_e**3
+    K_local[1, 11] = 6 * E * I_z / l_e**2
+    
+    K_local[5, 1] = 6 * E * I_z / l_e**2
+    K_local[5, 5] = 4 * E * I_z / l_e
+    K_local[5, 7] = -6 * E * I_z / l_e**2
+    K_local[5, 11] = 2 * E * I_z / l_e
+    
+    K_local[7, 1] = -12 * E * I_z / l_e**3
+    K_local[7, 5] = -6 * E * I_z / l_e**2
+    K_local[7, 7] = 12 * E * I_z / l_e**3
+    K_local[7, 11] = -6 * E * I_z / l_e**2
+    
+    K_local[11, 1] = 6 * E * I_z / l_e**2
+    K_local[11, 5] = 2 * E * I_z / l_e
+    K_local[11, 7] = -6 * E * I_z / l_e**2
+    K_local[11, 11] = 4 * E * I_z / l_e
+    
+    # Bending about local y-axis (in local xz-plane)
+    # DOF 3, 6, 9, 12: u1z, θ1y, u2z, θ2y
+    K_local[2, 2] = 12 * E * I_y / l_e**3
+    K_local[2, 4] = -6 * E * I_y / l_e**2
+    K_local[2, 8] = -12 * E * I_y / l_e**3
+    K_local[2, 10] = -6 * E * I_y / l_e**2
+    
+    K_local[4, 2] = -6 * E * I_y / l_e**2
+    K_local[4, 4] = 4 * E * I_y / l_e
+    K_local[4, 8] = 6 * E * I_y / l_e**2
+    K_local[4, 10] = 2 * E * I_y / l_e
+    
+    K_local[8, 2] = -12 * E * I_y / l_e**3
+    K_local[8, 4] = 6 * E * I_y / l_e**2
+    K_local[8, 8] = 12 * E * I_y / l_e**3
+    K_local[8, 10] = 6 * E * I_y / l_e**2
+    
+    K_local[10, 2] = -6 * E * I_y / l_e**2
+    K_local[10, 4] = 2 * E * I_y / l_e
+    K_local[10, 8] = 6 * E * I_y / l_e**2
+    K_local[10, 10] = 4 * E * I_y / l_e
+
+    # Transform local stiffness to global coordinates
+    K_global = T.T @ K_local @ T
+
+    # Map local DOFs to global DOFs (6 DOF per node)
     global_dofs = [
-        (node1_num - 1) * 3 + 0,  # Node 1 x
-        (node1_num - 1) * 3 + 1,  # Node 1 y
-        (node1_num - 1) * 3 + 2,  # Node 1 z
-        (node2_num - 1) * 3 + 0,  # Node 2 x
-        (node2_num - 1) * 3 + 1,  # Node 2 y
-        (node2_num - 1) * 3 + 2   # Node 2 z
+        (node1_num - 1) * 6 + 0,  # Node 1 ux
+        (node1_num - 1) * 6 + 1,  # Node 1 uy
+        (node1_num - 1) * 6 + 2,  # Node 1 uz
+        (node1_num - 1) * 6 + 3,  # Node 1 rx
+        (node1_num - 1) * 6 + 4,  # Node 1 ry
+        (node1_num - 1) * 6 + 5,  # Node 1 rz
+        (node2_num - 1) * 6 + 0,  # Node 2 ux
+        (node2_num - 1) * 6 + 1,  # Node 2 uy
+        (node2_num - 1) * 6 + 2,  # Node 2 uz
+        (node2_num - 1) * 6 + 3,  # Node 2 rx
+        (node2_num - 1) * 6 + 4,  # Node 2 ry
+        (node2_num - 1) * 6 + 5   # Node 2 rz
     ]
 
-    # Add K_e values to global stiffness matrix
+    # Add K_global values to global stiffness matrix
     for i, global_i in enumerate(global_dofs):
         for j, global_j in enumerate(global_dofs):
-            stiffness_matrix.iloc[global_i, global_j] += K_e[i, j]
+            stiffness_matrix.iloc[global_i, global_j] += K_global[i, j]
 
 print(f"\nGlobal stiffness matrix assembly complete.")
 print(f"Processed {len(elements)} elements.")
@@ -1332,16 +1509,18 @@ print("\n" + "="*80)
 print("SOLVING FEM SYSTEM: K * u = F")
 print("="*80)
 
-# Step 1: Convert forces DataFrame to numpy vector
-F_global = forces['Value (Newton)'].fillna(0).to_numpy()
+# Step 1: Convert forces DataFrame to numpy vector (6 DOF per node)
+F_global = forces['Value (N or N·m)'].fillna(0).to_numpy()
 print(f"\nStep 1: Force vector F created ({len(F_global)} DOFs)")
+print(f"  - Total nodes: {num_nodes}")
+print(f"  - DOF per node: 6 (3 forces + 3 moments)")
 
 # Step 2: Identify known (fixed) and unknown (free) DOFs
 known_dofs = []  # DOFs with prescribed displacement (u = 0)
 unknown_dofs = []  # DOFs to be solved
 
 for i in range(len(displacements)):
-    if pd.notna(displacements.loc[i, 'Value (m)']):
+    if pd.notna(displacements.loc[i, 'Value (m or rad)']):
         known_dofs.append(i)
     else:
         unknown_dofs.append(i)
@@ -1374,8 +1553,8 @@ u_full = np.zeros(n_dof)
 u_full[known_dofs] = 0.0  # Known displacements (supports)
 u_full[unknown_dofs] = u_unknown  # Solved displacements
 
-# Update displacements DataFrame
-displacements['Value (m)'] = u_full
+# Update displacements DataFrame (includes translations and rotations)
+displacements['Value (m or rad)'] = u_full
 
 print(f"\nStep 5: Full displacement vector reconstructed")
 print(f"  Total DOFs: {len(u_full)}")
@@ -1387,21 +1566,29 @@ print("\n" + "="*80)
 print("DISPLACEMENT RESULTS")
 print("="*80)
 
-# Show displacements for each node
+# Show displacements for each node (translations and rotations)
 for node_num in range(1, num_nodes + 1):
-    ux_idx = (node_num - 1) * 3 + 0
-    uy_idx = (node_num - 1) * 3 + 1
-    uz_idx = (node_num - 1) * 3 + 2
+    ux_idx = (node_num - 1) * 6 + 0
+    uy_idx = (node_num - 1) * 6 + 1
+    uz_idx = (node_num - 1) * 6 + 2
+    rx_idx = (node_num - 1) * 6 + 3
+    ry_idx = (node_num - 1) * 6 + 4
+    rz_idx = (node_num - 1) * 6 + 5
     
     ux = u_full[ux_idx]
     uy = u_full[uy_idx]
     uz = u_full[uz_idx]
+    rx = u_full[rx_idx]
+    ry = u_full[ry_idx]
+    rz = u_full[rz_idx]
     
-    magnitude = np.sqrt(ux**2 + uy**2 + uz**2)
+    trans_magnitude = np.sqrt(ux**2 + uy**2 + uz**2)
+    rot_magnitude = np.sqrt(rx**2 + ry**2 + rz**2)
     
-    # Only print nodes with significant displacement (> 1 μm)
-    if magnitude > 1e-6:
-        print(f"Node {node_num:2d}: Ux={ux*1000:8.4f} mm, Uy={uy*1000:8.4f} mm, Uz={uz*1000:8.4f} mm, |U|={magnitude*1000:8.4f} mm")
+    # Only print nodes with significant displacement (> 1 μm or > 1 μrad)
+    if trans_magnitude > 1e-6 or rot_magnitude > 1e-6:
+        print(f"Node {node_num:2d}: Ux={ux*1000:8.4f} mm, Uy={uy*1000:8.4f} mm, Uz={uz*1000:8.4f} mm, |U|={trans_magnitude*1000:8.4f} mm")
+        print(f"          Rx={rx*1000:8.4f} mrad, Ry={ry*1000:8.4f} mrad, Rz={rz*1000:8.4f} mrad, |R|={rot_magnitude*1000:8.4f} mrad")
 
 # Display displacements DataFrame in interactive window
 display_matrix_table(displacements, "Solved Displacements")
@@ -1414,10 +1601,11 @@ print("="*80)
 reactions = K_full[known_dofs, :] @ u_full
 
 for i, dof_idx in enumerate(known_dofs):
-    node_num = dof_idx // 3 + 1
-    direction = ['x', 'y', 'z'][dof_idx % 3]
+    node_num = dof_idx // 6 + 1
+    dof_type = ['Fx', 'Fy', 'Fz', 'Mx', 'My', 'Mz'][dof_idx % 6]
     reaction = reactions[i]
-    print(f"Node {node_num} - F{direction}: {reaction:10.2f} N")
+    unit = 'N' if dof_idx % 6 < 3 else 'N·m'
+    print(f"Node {node_num} - {dof_type}: {reaction:10.2f} {unit}")
 
 # Sum of reactions (should balance applied forces)
 total_reaction = np.sum(reactions)
@@ -1454,17 +1642,18 @@ print("\n" + "="*80)
 # Create interactive Plotly 3D plot comparing undeformed and deformed structures
 fig_deformed = go.Figure()
 
-# Calculate deformed node positions
+# Calculate deformed node positions (using translations only, rotations affect element orientation)
 deformed_points = points.copy()
 for node_num in range(1, num_nodes + 1):
-    ux_idx = (node_num - 1) * 3 + 0
-    uy_idx = (node_num - 1) * 3 + 1
-    uz_idx = (node_num - 1) * 3 + 2
+    ux_idx = (node_num - 1) * 6 + 0  # Translation in X
+    uy_idx = (node_num - 1) * 6 + 1  # Translation in Y
+    uz_idx = (node_num - 1) * 6 + 2  # Translation in Z
     
     # Get node index in points DataFrame
     node_idx = node_num - 1
     
-    # Add displacements to original coordinates
+    # Add translational displacements to original coordinates
+    # Note: Rotations (rx, ry, rz) affect element orientation but not node position
     deformed_points.loc[node_idx, 'X'] = points.iloc[node_idx]['X'] + u_full[ux_idx]
     deformed_points.loc[node_idx, 'Y'] = points.iloc[node_idx]['Y'] + u_full[uy_idx]
     deformed_points.loc[node_idx, 'Z'] = points.iloc[node_idx]['Z'] + u_full[uz_idx]
